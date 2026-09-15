@@ -81,6 +81,11 @@ public sealed class MpvClient : IDisposable
 
     public event Action<MpvEventId>? EventReceived;
 
+    /// <summary>
+    /// 파일 재생이 끝났거나 열기에 실패했다. 인자는 mpv 오류 코드(0 이면 정상 종료).
+    /// </summary>
+    public event Action<int>? EndFile;
+
     /// <summary>시크 → PlaybackRestart 왕복 시간. (M0-5)</summary>
     public event Action<double>? SeekCompleted;
 
@@ -117,6 +122,10 @@ public sealed class MpvClient : IDisposable
 
         SetOption("input-default-bindings", "no");
         SetOption("input-vo-keyboard", "no");   // ★ M0-7: mpv가 키를 직접 먹지 않게
+        SetOption("input-cursor", "no");        // 마우스도 앱이 처리한다 (VideoSurfaceHost)
+        SetOption("cursor-autohide", "no");
+        SetOption("screenshot-format", "jpg");
+        SetOption("screenshot-jpeg-quality", "85");
         SetOption("osd-level", "0");
         SetOption("keep-open", "yes");
         SetOption("hr-seek", "yes");
@@ -151,6 +160,14 @@ public sealed class MpvClient : IDisposable
                 var ms = (Stopwatch.GetTimestamp() - _seekIssuedTicks) * 1000.0 / Stopwatch.Frequency;
                 _seekIssuedTicks = 0;
                 SeekCompleted?.Invoke(ms);
+            }
+
+            if (id == MpvEventId.EndFile)
+            {
+                // mpv_event.data → mpv_event_end_file { int reason; int error; ... }
+                var data = Marshal.ReadIntPtr(ptr, 16);
+                var error = data == IntPtr.Zero ? 0 : Marshal.ReadInt32(data, 4);
+                EndFile?.Invoke(error);
             }
 
             EventReceived?.Invoke(id);
@@ -250,6 +267,8 @@ public sealed class MpvClient : IDisposable
         try { Check(mpv_set_option_string(_ctx, n, v), $"set_option({name})"); }
         finally { Marshal.FreeCoTaskMem(n); Marshal.FreeCoTaskMem(v); }
     }
+
+    public void SetPropertyString(string name, string value) => SetProperty(name, value);
 
     private void SetProperty(string name, string value)
     {

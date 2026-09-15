@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using OtogeTrainer.Input;
 
 using OtogeTrainer.M0.Mpv;
+using OtogeTrainer.Playback;
 using OtogeTrainer.Playback.Mpv;
 
 namespace OtogeTrainer.M0;
@@ -24,7 +25,7 @@ namespace OtogeTrainer.M0;
 public partial class PlaybackWindow : Window
 {
     private readonly MpvClient _mpv = new();
-    private readonly MpvVideoHost _host = new();
+    private readonly VideoSurfaceHost _host = new();
     private readonly DispatcherTimer _stats;
     private readonly List<double> _seekLatencies = [];
     private readonly WindowInputGuard _guard;
@@ -93,7 +94,7 @@ public partial class PlaybackWindow : Window
         await Task.Delay(700);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"  자식 HWND        0x{_host.VideoHandle.ToInt64():X}");
+        sb.AppendLine($"  자식 HWND        0x{_host.SurfaceHandle.ToInt64():X}");
         sb.AppendLine($"  current-vo       {_mpv.CurrentVo ?? "-"}");
         sb.AppendLine($"  dwidth×dheight   {_mpv.DisplayWidth?.ToString() ?? "-"}×{_mpv.DisplayHeight?.ToString() ?? "-"}");
         sb.AppendLine($"  hwdec            {_mpv.HwdecCurrent ?? "-"}");
@@ -101,8 +102,36 @@ public partial class PlaybackWindow : Window
         sb.AppendLine($"  드랍 프레임      {_mpv.DroppedFrames?.ToString() ?? "-"}");
         sb.AppendLine();
 
+        // ── M1 사전 검증: 영상 위 마우스 입력이 엔진 창이 아니라 표면으로 오는가 ──
+        var auto = _host.Diagnose();                       // WM_PARENTNOTIFY 가 이미 처리한 상태
+        _host.EnableEngineWindowsForDiagnostics();         // 대조군: 비활성화를 되돌린다
+        await Task.Delay(100);
+        var control = _host.Diagnose();
+        _host.DisableEngineWindows();
+        await Task.Delay(100);
+        var after = _host.Diagnose();
+
+        sb.AppendLine("  [마우스 경로]");
+        foreach (var (h, enabled, sameThread) in auto.EngineWindows)
+            sb.AppendLine($"  엔진 창 0x{h.ToInt64():X}  같은 스레드 {sameThread}  (자동 비활성화됨: {!enabled})");
+        sb.AppendLine($"  대조군(활성)   중앙 히트 0x{control.HitTestAtCenter.ToInt64():X}  → 표면 도달 {control.PointerReachesSurface}  (기대: False)");
+        sb.AppendLine($"  비활성화 후    중앙 히트 0x{after.HitTestAtCenter.ToInt64():X}  → 표면 도달 {after.PointerReachesSurface}  (기대: True)");
+
+        // 비활성화한 뒤에도 렌더링이 계속되는지 — 새 프레임을 그리게 한 뒤 다시 찍는다
+        _mpv.SeekAbsoluteExact(20.0);
+        await Task.Delay(900);
+        var afterPng = System.IO.Path.ChangeExtension(outPng, ".after-disable.png");
+        _mpv.Command("screenshot-to-file", afterPng, "window");
+        await Task.Delay(700);
+        sb.AppendLine($"  비활성화 후 렌더링     {(File.Exists(afterPng) ? new FileInfo(afterPng).Length.ToString("N0") + " bytes" : "실패")}  f#{_mpv.EstimatedFrameNumber}");
+        sb.AppendLine();
+
         var ok = File.Exists(outPng) && new FileInfo(outPng).Length > 0
-                 && _mpv.CurrentVo is not null && _mpv.DisplayWidth is > 0;
+                 && _mpv.CurrentVo is not null && _mpv.DisplayWidth is > 0
+                 && auto.EngineWindows.Count > 0 && auto.EngineWindows.All(w => !w.Enabled)
+                 && !control.PointerReachesSurface
+                 && after.PointerReachesSurface && after.EngineWindows.All(w => !w.Enabled)
+                 && File.Exists(afterPng);
 
         sb.AppendLine(ok
             ? $"  스크린샷 {new FileInfo(outPng).Length:N0} bytes → {outPng}"

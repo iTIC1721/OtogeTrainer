@@ -51,9 +51,9 @@ public interface IMediaEngine : IDisposable
     /// <summary>현재 프레임을 파일로 저장한다. OSD 없이 원본 해상도.</summary>
     Task<bool> SaveFrameAsync(string path);
 
-    /// <summary>파일이 열려 메타데이터를 읽을 수 있게 된 시점.</summary>
+    /// <summary>
+    /// 파일이 열려 메타데이터를 읽을 수 있게 된 시점.
+    /// 끝에 도달하면 마지막 프레임에서 일시정지 상태로 머문다(keep-open).
+    /// </summary>
     event EventHandler? FileLoaded;
-
-    /// <summary>재생이 끝에 도달했다. (keep-open 이므로 마지막 프레임에서 일시정지된다)</summary>
-    event EventHandler? EndReached;
 }
