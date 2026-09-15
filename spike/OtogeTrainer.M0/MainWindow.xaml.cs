@@ -303,6 +303,19 @@ public partial class MainWindow : Window
             : $"의도치 않은 중단 누계 {_unexpectedPauses}회";
     }
 
+    /// <summary>
+    /// <b>하네스 전용이다. 제품(M1)으로 옮기지 말 것.</b>
+    /// <para>
+    /// SPEC §6.3 은 재생 중 삼킨 키를 "로그도 남기지 않고 조용히 버린다" 로 규정한다.
+    /// 판정은 O(1) 이어야 하고(NFR-05), 키 입력 내용을 저장하지 않아야 하기 때문(NFR-12).
+    /// </para>
+    /// <para>
+    /// 여기서 로그를 남기는 이유는 진단 때문이다. "삼켰다" 와 "이벤트가 도달하지 않았다" 는
+    /// 겉보기가 같아서, 판정 결과가 찍히는지로만 구분할 수 있다. 실제로 ClearFocus 로 키
+    /// 이벤트가 통째로 소실되던 버그를 이 로그로 잡았다.
+    /// </para>
+    /// <para>메모리에만 남으며(12,000자에서 잘림) 파일로 나가지 않는다.</para>
+    /// </summary>
     private void Log(in KeyEventContext ctx, string decision)
     {
         var key = ctx.Key == Key.System ? $"System({ctx.SystemKey})" : ctx.Key.ToString();

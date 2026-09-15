@@ -91,8 +91,11 @@
 
             <Border Grid.Column="0" Background="{StaticResource Bg1}" CornerRadius="6" Padding="10">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="키 이벤트 로그" FontWeight="SemiBold"
-                               Margin="0,0,0,6" />
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                        <TextBlock Text="키 이벤트 로그" FontWeight="SemiBold" />
+                        <TextBlock Foreground="{StaticResource Fg1}" FontSize="11" TextWrapping="Wrap"
+                                   Text="진단용 — 제품에서는 재생 중 삼킨 키를 기록하지 않는다 (SPEC §6.3 / NFR-05 · NFR-12). 메모리에만 남으며 파일로 저장되지 않음." />
+                    </StackPanel>
                     <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                         <TextBlock x:Name="TxtLog" FontFamily="Cascadia Mono, Consolas"
                                    FontSize="12" Foreground="{StaticResource Fg1}" />
