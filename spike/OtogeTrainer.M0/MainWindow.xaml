@@ -33,6 +33,7 @@
                           Content="재생 중에도 단축키 허용 (FR-508)"
                           Checked="OnGuardToggled" Unchecked="OnGuardToggled" />
                 <Button Content="누출 기록 초기화" Click="OnResetLeaks" Margin="16,0,0,0" />
+                <Button Content="▶ 재생 엔진 검증 창 (M0-1~5)" Click="OnOpenPlayback" Margin="8,0,0,0" />
             </StackPanel>
         </Border>
 

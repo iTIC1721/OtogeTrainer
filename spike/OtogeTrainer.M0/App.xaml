@@ -1,7 +1,6 @@
 <Application x:Class="OtogeTrainer.M0.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
 
         <!-- UI-BLUEPRINT §11 팔레트 -->

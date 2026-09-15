@@ -1,0 +1,95 @@
+<Window x:Class="OtogeTrainer.M0.PlaybackWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OtogeTrainer — M0 스파이크 (재생 엔진 검증)"
+        Height="880" Width="1320"
+        Background="{StaticResource Bg0}"
+        UseLayoutRounding="True">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="400" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── 파일 열기 ───────────────────────────────────────────────── -->
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{StaticResource Bg1}"
+                CornerRadius="6" Padding="12,10" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="📂 영상 열기…" Click="OnOpenFile" />
+                <Separator Width="10" Opacity="0" />
+                <Button Content="frametest 60fps"    Tag="frametest_60_cfr.mp4"      Click="OnLoadAsset" />
+                <Button Content="frametest 30fps"    Tag="frametest_30_cfr.mp4"      Click="OnLoadAsset" />
+                <Button Content="frametest 59.94fps" Tag="frametest_5994_cfr.mp4"    Click="OnLoadAsset" />
+                <Button Content="A/V 싱크"           Tag="avsync_1s_flash_click.mp4" Click="OnLoadAsset" />
+                <TextBlock x:Name="TxtFile" Text="(파일 없음)" Foreground="{StaticResource Fg1}"
+                           VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Border>
+
+        <!-- ── 영상 ────────────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="0" x:Name="VideoHost"
+                Background="#000000" CornerRadius="4" />
+
+        <!-- ── 계측 패널 ───────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource Bg1}"
+                CornerRadius="6" Padding="12" Margin="12,0,0,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="계측" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock x:Name="TxtStats" FontFamily="Cascadia Mono, Consolas"
+                                   FontSize="12" Foreground="{StaticResource Fg0}" />
+                        <Separator Height="12" Opacity="0" />
+                        <TextBlock Text="자동 검사 결과" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <TextBlock x:Name="TxtVerify" FontFamily="Cascadia Mono, Consolas"
+                                   FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{StaticResource Fg1}"
+                                   Text="아직 실행하지 않음" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- ── 컨트롤 ──────────────────────────────────────────────────── -->
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource Bg1}"
+                CornerRadius="6" Padding="12,10" Margin="0,12,0,0">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button x:Name="BtnPlay" Content="▶  재생" Click="OnPlayPause" MinWidth="96" />
+                    <Button Content="◀❙ 1f" Click="OnFrameBack" />
+                    <Button Content="1f ❙▶" Click="OnFrameForward" />
+                    <Button Content="⏮ 5s×배속" Click="OnSeekBack" />
+                    <Button Content="5s×배속 ⏭" Click="OnSeekForward" />
+                    <Separator Width="10" Opacity="0" />
+                    <TextBlock Text="배속" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Button Content="0.25" Tag="0.25" Click="OnSpeed" />
+                    <Button Content="0.5"  Tag="0.5"  Click="OnSpeed" />
+                    <Button Content="0.75" Tag="0.75" Click="OnSpeed" />
+                    <Button Content="1.0"  Tag="1.0"  Click="OnSpeed" />
+                    <Button Content="1.5"  Tag="1.5"  Click="OnSpeed" />
+                    <Button Content="2.0"  Tag="2.0"  Click="OnSpeed" />
+                    <CheckBox x:Name="ChkPitch" IsChecked="True" Content="피치 보정"
+                              Click="OnPitchToggled" Margin="12,0,0,0" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="오프셋" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Button Content="−25ms" Tag="-25" Click="OnOffset" />
+                    <Button Content="−5ms"  Tag="-5"  Click="OnOffset" />
+                    <Button Content="0"     Tag="0"   Click="OnOffsetReset" />
+                    <Button Content="+5ms"  Tag="5"   Click="OnOffset" />
+                    <Button Content="+25ms" Tag="25"  Click="OnOffset" />
+                    <Separator Width="16" Opacity="0" />
+                    <Button Content="▶ 자동 검사: 프레임 스텝 (M0-2)" Click="OnVerifyFrameStep" />
+                    <Button Content="▶ 자동 검사: 정확 시크 (M0-5)"   Click="OnVerifySeek" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

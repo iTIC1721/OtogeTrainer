@@ -269,6 +269,9 @@ public partial class MainWindow : Window
     private void OnNoop(object sender, RoutedEventArgs e)
         => WasActivatedByKeyboard(((Button)sender).Content?.ToString() ?? "?");
 
+    private void OnOpenPlayback(object sender, RoutedEventArgs e)
+        => new PlaybackWindow { Owner = this }.Show();
+
     private void OnResetLeaks(object sender, RoutedEventArgs e)
     {
         _leaks.Clear();
@@ -329,6 +332,10 @@ public partial class MainWindow : Window
 
     private void RenderState()
     {
+        // XAML 의 IsChecked="True" 가 InitializeComponent 도중 Checked 를 발생시킨다.
+        // 그 시점에는 다른 x:Name 필드가 아직 null 이다.
+        if (!IsLoaded) return;
+
         ApplyGuard();
         BtnPlayPause.Content = _isPlaying ? "❚❚  일시정지" : "▶  재생";
 
