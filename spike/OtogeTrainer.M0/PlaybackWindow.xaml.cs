@@ -41,7 +41,7 @@ public partial class PlaybackWindow : Window
         // "mpv 가 키를 먹는지" 를 판단할 수 없다.
         _guard = new WindowInputGuard(this, isPlaying: () => _mpv.IsAlive && !_mpv.Paused);
         _guard.EscapePressed += () => { _mpv.Paused = true; SyncPlayButton(); };
-        _guard.ShortcutRequested += DispatchShortcut;
+        _guard.ShortcutHandler = ctx => { DispatchShortcut(ctx); return true; };
 
         VideoHost.Child = _host;
         _host.HandleReady += hwnd => Dispatcher.BeginInvoke(() => StartMpv(hwnd));

@@ -124,3 +124,35 @@ public class TimecodeTests
     public void FormatShort(long ms, string expected)
         => Assert.Equal(expected, Timecode.FormatShort(TimeSpan.FromMilliseconds(ms)));
 }
+
+public class BookmarkNavigationTests
+{
+    // 슬롯 번호와 시간 순서가 일치하지 않게 둔다. 이동은 슬롯이 아니라 시간 기준이어야 한다.
+    private static readonly Library.Bookmark[] Marks =
+    [
+        new(3, 10_000), new(1, 30_000), new(5, 60_000),
+    ];
+
+    [Theory]
+    [InlineData(45_000, 30_000)]
+    [InlineData(30_000, 10_000)]   // 북마크 위에 서 있으면 그 앞으로
+    [InlineData(30_200, 10_000)]   // 점프 직후 조금 흘러가도 여전히 "여기"
+    [InlineData(30_400, 30_000)]   // 충분히 지나면 방금 그 북마크로
+    public void 이전(long current, long expected)
+        => Assert.Equal(expected, BookmarkNavigation.Previous(Marks, current)!.PositionMs);
+
+    [Theory]
+    [InlineData(15_000, 30_000)]
+    [InlineData(30_000, 60_000)]
+    [InlineData(29_800, 60_000)]
+    public void 다음(long current, long expected)
+        => Assert.Equal(expected, BookmarkNavigation.Next(Marks, current)!.PositionMs);
+
+    [Fact]
+    public void 끝에서는_없음()
+    {
+        Assert.Null(BookmarkNavigation.Previous(Marks, 5_000));
+        Assert.Null(BookmarkNavigation.Next(Marks, 70_000));
+        Assert.Null(BookmarkNavigation.Next([], 0));
+    }
+}

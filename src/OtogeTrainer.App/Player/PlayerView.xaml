@@ -1,0 +1,246 @@
+<UserControl x:Class="OtogeTrainer.App.Player.PlayerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             xmlns:app="clr-namespace:OtogeTrainer.App"
+             xmlns:player="clr-namespace:OtogeTrainer.App.Player">
+
+    <!--
+      영상(HwndHost) 위에는 WPF 요소를 겹칠 수 없다(airspace). OSD 와 컨트롤은 전부
+      영상 바깥에 배치한다. UI-BLUEPRINT §4 의 오버레이 OSD 는 이 제약으로 바뀌었다.
+    -->
+
+    <UserControl.Resources>
+        <app:HasValueToVisibilityConverter x:Key="HasValue" />
+
+        <!-- RelayCommand<int> 는 문자열 인자를 받지 않는다. 숫자는 타입이 있는 리소스로 넘긴다. -->
+        <sys:Int32 x:Key="Back">-1</sys:Int32>
+        <sys:Int32 x:Key="Forward">1</sys:Int32>
+        <sys:Int32 x:Key="OffsetDown">-5</sys:Int32>
+        <sys:Int32 x:Key="OffsetUp">5</sys:Int32>
+        <sys:Int32 x:Key="OffsetFineDown">-1</sys:Int32>
+        <sys:Int32 x:Key="OffsetFineUp">1</sys:Int32>
+
+        <Style x:Key="ControlButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="MinWidth" Value="44" />
+        </Style>
+
+        <Style x:Key="SectionLabel" TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="Divider" TargetType="Border">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Background" Value="{StaticResource Bg3}" />
+            <Setter Property="Margin" Value="14,4" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ── 상단 바: 복귀 · 제목 · 상태 배지 (FR-505 / FR-511) ─────────── -->
+        <DockPanel Grid.Row="0" Margin="12,8">
+            <Button DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="◀  라이브러리"
+                    Command="{Binding BackCommand}" ToolTip="라이브러리로 돌아가기 (일시정지 중 Alt+←)" />
+
+            <Border DockPanel.Dock="Right" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource Bg2}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                <Setter Property="Background" Value="#33FFB454" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock FontSize="12.5">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Text" Value="🔓  일시정지 · 단축키 사용" />
+                            <Setter Property="Foreground" Value="{StaticResource Fg1}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                    <Setter Property="Text" Value="🔒  재생 중 · 단축키 꺼짐 — ESC 로 일시정지" />
+                                    <Setter Property="Foreground" Value="{StaticResource Warn}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="Text" Value="여는 중…" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Border>
+
+            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Margin="12,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+
+        <!-- ── 영상. 재생 중에는 테두리가 앰버로 바뀐다 (UI-BLUEPRINT §5) ──── -->
+        <Border Grid.Row="1" x:Name="VideoFrame" Background="Black" BorderThickness="2" Margin="12,0">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="{StaticResource Bg1}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                            <Setter Property="BorderBrush" Value="#99FFB454" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        </Border>
+
+        <!-- ── 컨트롤 영역 ─────────────────────────────────────────────────── -->
+        <Border Grid.Row="2" Background="{StaticResource Bg1}" Padding="16,10,16,12">
+            <StackPanel>
+                <!-- 타임라인 (FR-202 / FR-307) -->
+                <DockPanel Margin="0,0,0,8">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                        <TextBlock Text="{Binding PositionText}" Style="{StaticResource MonoText}" FontSize="14" />
+                        <TextBlock Text="{Binding FrameText}" Style="{StaticResource MonoText}" FontSize="12"
+                                   Foreground="{StaticResource Fg1}" Margin="10,2,0,0" MinWidth="64" />
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding DurationText}" Style="{StaticResource MonoText}"
+                               FontSize="14" Foreground="{StaticResource Fg1}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                    <Slider x:Name="Timeline" Style="{StaticResource Timeline}" VerticalAlignment="Center"
+                            Minimum="0" Maximum="{Binding TimelineMaximum}"
+                            Value="{Binding TimelinePosition, Mode=TwoWay}"
+                            PreviewMouseLeftButtonDown="OnTimelinePressed"
+                            PreviewMouseLeftButtonUp="OnTimelineReleased"
+                            LostMouseCapture="OnTimelineCaptureLost" />
+                </DockPanel>
+
+                <!-- 1행: 재생 · 탐색 · 배속 -->
+                <WrapPanel Margin="0,0,0,8">
+                    <Button Style="{StaticResource ControlButton}" Command="{Binding JumpCommand}" CommandParameter="{StaticResource Back}"
+                            ToolTip="뒤로 점프 — 5초 × 배속 (←, 휠 위)">
+                        <TextBlock Text="{Binding JumpText, StringFormat='⏮ {0}'}" />
+                    </Button>
+                    <Button Style="{StaticResource ControlButton}" Content="◀❙ 1f" Command="{Binding StepFrameCommand}"
+                            CommandParameter="{StaticResource Back}" ToolTip="한 프레임 뒤로 (, 또는 Shift+←, 우클릭 드래그 ←)" />
+                    <Button Style="{StaticResource ControlButton}" MinWidth="104" Command="{Binding TogglePlayCommand}"
+                            ToolTip="재생 / 일시정지 (Space, 영상 클릭)">
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="▶  재생" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPaused}" Value="False">
+                                            <Setter Property="Text" Value="❚❚  일시정지" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                    <Button Style="{StaticResource ControlButton}" Content="1f ❙▶" Command="{Binding StepFrameCommand}"
+                            CommandParameter="{StaticResource Forward}" ToolTip="한 프레임 앞으로 (. 또는 Shift+→, 우클릭 드래그 →)" />
+                    <Button Style="{StaticResource ControlButton}" Command="{Binding JumpCommand}" CommandParameter="{StaticResource Forward}"
+                            ToolTip="앞으로 점프 — 5초 × 배속 (→, 휠 아래)">
+                        <TextBlock Text="{Binding JumpText, StringFormat='{}{0} ⏭'}" />
+                    </Button>
+
+                    <Border Style="{StaticResource Divider}" />
+
+                    <TextBlock Text="배속" Style="{StaticResource SectionLabel}" />
+                    <Button Style="{StaticResource ControlButton}" Content="−" Command="{Binding SpeedStepCommand}"
+                            CommandParameter="{StaticResource Back}" ToolTip="배속 −0.05 (↓)" />
+                    <TextBlock Text="{Binding SpeedText}" Style="{StaticResource MonoText}" FontSize="14"
+                               VerticalAlignment="Center" MinWidth="52" TextAlignment="Center" Margin="0,0,6,0" />
+                    <Button Style="{StaticResource ControlButton}" Content="+" Command="{Binding SpeedStepCommand}"
+                            CommandParameter="{StaticResource Forward}" ToolTip="배속 +0.05 (↑)" />
+                    <ItemsControl ItemsSource="{Binding SpeedPresets}" Focusable="False" Margin="6,0,0,0"
+                                  ToolTip="배속 프리셋 (Ctrl+↑ / Ctrl+↓)">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Margin="0,0,4,0" Padding="8,4" MinWidth="44"
+                                        Content="{Binding}" ContentStringFormat="0.0#"
+                                        Command="{Binding DataContext.SetSpeedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </WrapPanel>
+
+                <!-- 2행: 오프셋 · 북마크 -->
+                <WrapPanel>
+                    <TextBlock Text="오프셋" Style="{StaticResource SectionLabel}"
+                               ToolTip="양수 = 소리를 늦춤. 소리가 영상보다 빨리 들릴 때 올리세요. (FR-402)" />
+                    <Button Style="{StaticResource ControlButton}" Content="−5" Command="{Binding AdjustOffsetCommand}"
+                            CommandParameter="{StaticResource OffsetDown}" ToolTip="오프셋 −5ms ([)" />
+                    <Button Style="{StaticResource ControlButton}" Content="−1" MinWidth="36" Command="{Binding AdjustOffsetCommand}"
+                            CommandParameter="{StaticResource OffsetFineDown}" ToolTip="오프셋 −1ms (Ctrl+[)" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" MinWidth="120" Margin="0,0,6,0">
+                        <TextBlock Text="{Binding OffsetText}" Style="{StaticResource MonoText}" FontSize="14" />
+                        <TextBlock Text="{Binding OffsetFramesText}" Style="{StaticResource MonoText}" FontSize="12"
+                                   Foreground="{StaticResource Fg1}" Margin="8,2,0,0" />
+                    </StackPanel>
+                    <Button Style="{StaticResource ControlButton}" Content="+1" MinWidth="36" Command="{Binding AdjustOffsetCommand}"
+                            CommandParameter="{StaticResource OffsetFineUp}" ToolTip="오프셋 +1ms (Ctrl+])" />
+                    <Button Style="{StaticResource ControlButton}" Content="+5" Command="{Binding AdjustOffsetCommand}"
+                            CommandParameter="{StaticResource OffsetUp}" ToolTip="오프셋 +5ms (])" />
+                    <Button Style="{StaticResource ControlButton}" Content="0" Command="{Binding ResetOffsetCommand}"
+                            ToolTip="오프셋 0 (Ctrl+Shift+0)" />
+
+                    <Border Style="{StaticResource Divider}" />
+
+                    <TextBlock Text="북마크" Style="{StaticResource SectionLabel}"
+                               ToolTip="마우스 사이드 버튼으로 이전 / 다음 북마크로 이동" />
+                    <ItemsControl ItemsSource="{Binding Slots}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type player:BookmarkSlotViewModel}">
+                                <Button x:Name="SlotButton" Margin="0,0,6,0" Padding="0" Width="78"
+                                        Command="{Binding DataContext.ActivateSlotCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Slot}"
+                                        Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        ToolTip="{Binding ToolTipText}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="현재 위치로 저장"
+                                                      Command="{Binding SaveSlotCommand}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext.Slot, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="비우기"
+                                                      Command="{Binding ClearSlotCommand}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext.Slot, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel Margin="4,3">
+                                        <TextBlock x:Name="SlotNumber" Text="{Binding Slot}" HorizontalAlignment="Center"
+                                                   FontWeight="Bold" Foreground="{StaticResource Fg2}" />
+                                        <TextBlock x:Name="SlotTime" Text="—" HorizontalAlignment="Center"
+                                                   Style="{StaticResource MonoText}" FontSize="10" Foreground="{StaticResource Fg2}" />
+                                    </StackPanel>
+                                </Button>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSet}" Value="True">
+                                        <Setter TargetName="SlotButton" Property="BorderBrush" Value="{StaticResource Bookmark}" />
+                                        <Setter TargetName="SlotNumber" Property="Foreground" Value="{StaticResource Fg0}" />
+                                        <Setter TargetName="SlotTime" Property="Foreground" Value="{StaticResource Fg1}" />
+                                        <Setter TargetName="SlotTime" Property="Text"
+                                                Value="{Binding PositionMs, Converter={x:Static player:SlotTimeConverter.Instance}}" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </WrapPanel>
+
+                <TextBlock Margin="0,10,0,0" Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
+                           Text="재생 중: ESC 일시정지 · 영상 클릭 재생/일시정지 · 휠 점프 · 우클릭 드래그 프레임 · 사이드 버튼 북마크      일시정지 중: Space · ←/→ · ,/. · ↑/↓ · [ ] · 1~5 (Ctrl 저장 · Shift 비우기) · Alt+← 라이브러리" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

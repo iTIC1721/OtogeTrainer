@@ -25,6 +25,7 @@ public sealed class WindowInputGuard
     private readonly Func<bool> _isPlaying;
     private readonly Func<bool> _allowWhilePlaying;
     private readonly Func<bool> _enabled;
+    private readonly HashSet<Key> _handledDown = [];
 
     public WindowInputGuard(
         Window window,
@@ -52,8 +53,14 @@ public sealed class WindowInputGuard
     /// <summary>로깅용. 판정 결과를 그대로 흘려보낸다.</summary>
     public event Action<KeyEventContext, InputDecision>? KeyEvaluated;
 
-    /// <summary>일시정지 상태에서만 발생한다. 실제 단축키 처리는 각 창이 한다.</summary>
-    public event Action<KeyEventContext>? ShortcutRequested;
+    /// <summary>
+    /// 일시정지 상태의 키 입력을 처리한다. 처리했으면 true 를 돌려준다.
+    /// <para>
+    /// <b>true 면 키를 소비한다.</b> 소비하지 않으면 포커스된 버튼이 같은 Space 를 한 번 더
+    /// 받아, 단축키와 버튼 클릭이 동시에 일어난다(재생 토글이 두 번 = 아무 일도 없음).
+    /// </para>
+    /// </summary>
+    public Func<KeyEventContext, bool>? ShortcutHandler { get; set; }
 
     /// <summary>재생 중 ESC. (FR-504 / D-3 — 일시정지 전용이므로 재생 중에만 의미가 있다)</summary>
     public event Action? EscapePressed;
@@ -100,7 +107,12 @@ public sealed class WindowInputGuard
                 break;
 
             case InputDecision.Dispatch:
-                if (isDown) ShortcutRequested?.Invoke(ctx);
+                // 누름에서 처리했으면 뗌도 함께 소비한다. KeyUp 에 반응하는 컨트롤이 있다.
+                if (ShortcutHandler is { } handler && (isDown ? handler(ctx) : _handledDown.Remove(ctx.EffectiveKey)))
+                {
+                    if (isDown) _handledDown.Add(ctx.EffectiveKey);
+                    e.Handled = true;
+                }
                 break;
         }
 

@@ -95,3 +95,24 @@ public static class Timecode
             : $"{(int)value.TotalMinutes}:{value.Seconds:00}";
     }
 }
+
+/// <summary>사이드 버튼 · 단축키로 이전/다음 북마크로 건너뛰는 규칙. (SPEC §6.6)</summary>
+public static class BookmarkNavigation
+{
+    /// <summary>
+    /// 이 거리 안쪽의 북마크는 "지금 여기" 로 본다. 북마크로 점프한 직후 이전 버튼을 누르면
+    /// 같은 북마크에 머물지 않고 그 앞 북마크로 가야 하기 때문. 재생 중이면 점프 후에도
+    /// 위치가 조금 흘러가므로 한 프레임보다 넉넉히 잡는다.
+    /// </summary>
+    public const long ProximityMs = 300;
+
+    public static Library.Bookmark? Previous(IEnumerable<Library.Bookmark> bookmarks, long currentMs)
+        => bookmarks
+            .Where(b => b.PositionMs < currentMs - ProximityMs)
+            .MaxBy(b => b.PositionMs);
+
+    public static Library.Bookmark? Next(IEnumerable<Library.Bookmark> bookmarks, long currentMs)
+        => bookmarks
+            .Where(b => b.PositionMs > currentMs + ProximityMs)
+            .MinBy(b => b.PositionMs);
+}

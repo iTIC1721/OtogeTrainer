@@ -1,0 +1,41 @@
+<Window x:Class="OtogeTrainer.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:OtogeTrainer.App"
+        xmlns:lib="clr-namespace:OtogeTrainer.App.Library"
+        xmlns:player="clr-namespace:OtogeTrainer.App.Player"
+        Title="OtogeTrainer"
+        Width="1280" Height="840" MinWidth="960" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg0}"
+        FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True"
+        AllowDrop="True">
+
+    <Window.Resources>
+        <app:HasValueToVisibilityConverter x:Key="HasValue" />
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 알림 배너 (오류 · 안내) -->
+        <Border Grid.Row="0" Background="#33FF5C5C" BorderBrush="{StaticResource Danger}" BorderThickness="0,0,0,1"
+                Padding="16,8" Visibility="{Binding Notice, Converter={StaticResource HasValue}}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="✕"
+                        Command="{Binding DismissNoticeCommand}" ToolTip="닫기" />
+                <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <lib:LibraryView Grid.Row="1" DataContext="{Binding Library}"
+                         Visibility="{Binding DataContext.IsLibraryScreen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}" />
+
+        <player:PlayerView x:Name="PlayerView" Grid.Row="1" DataContext="{Binding Player}"
+                           Visibility="{Binding DataContext.IsPlayerScreen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}" />
+    </Grid>
+</Window>

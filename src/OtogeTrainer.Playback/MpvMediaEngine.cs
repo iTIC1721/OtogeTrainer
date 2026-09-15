@@ -14,12 +14,23 @@ namespace OtogeTrainer.Playback;
 public sealed class MpvMediaEngine : IMediaEngine
 {
     private static readonly TimeSpan LoadTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SeekSettleTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(1);
+
+    /// <summary>한꺼번에 쌓아 둘 수 있는 프레임 스텝 수. 빠른 드래그 뒤 한참 따라오는 일을 막는다.</summary>
+    private const int MaxPendingSteps = 30;
 
     private readonly MpvClient _mpv = new();
     private readonly SynchronizationContext _ui;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource? _loading;
     private bool _disposed;
+
+    // ── 프레임 스텝 큐 ──
+    private int _pendingSteps;
+    private bool _stepping;
+    private long _restartCount;
+    private long _restartCountAtLastSeek = -1;
 
     /// <summary>화면에 붙는 엔진. 표면 창이 만들어지는 즉시 초기화된다.</summary>
     public MpvMediaEngine(VideoSurfaceHost surface)
@@ -44,6 +55,7 @@ public sealed class MpvMediaEngine : IMediaEngine
         _mpv.EventReceived += id =>
         {
             if (id == MpvEventId.FileLoaded) Post(OnFileLoaded);
+            else if (id == MpvEventId.PlaybackRestart) Post(() => _restartCount++);
         };
         _mpv.EndFile += error =>
         {
@@ -141,15 +153,101 @@ public sealed class MpvMediaEngine : IMediaEngine
     public void SeekAbsolute(TimeSpan position)
     {
         if (position < TimeSpan.Zero) position = TimeSpan.Zero;
+        BeginSeek();
         _mpv.SeekAbsoluteExact(position.TotalSeconds);
     }
 
-    public void SeekRelative(TimeSpan delta) => _mpv.SeekRelativeExact(delta.TotalSeconds);
+    public void SeekRelative(TimeSpan delta)
+    {
+        BeginSeek();
+        _mpv.SeekRelativeExact(delta.TotalSeconds);
+    }
 
+    /// <summary>
+    /// 시크는 가장 최근 의도가 이긴다. 쌓여 있던 프레임 스텝은 버린다 — 스텝 세 번 누르고
+    /// 곧바로 북마크로 점프했다면, 점프한 곳에서 스텝 세 번이 이어지길 원하진 않는다.
+    /// </summary>
+    private void BeginSeek()
+    {
+        _pendingSteps = 0;
+        _restartCountAtLastSeek = _restartCount;
+    }
+
+    /// <summary>
+    /// 정확히 한 프레임 이동. 연달아 불러도 전부 반영된다. (FR-301)
+    /// <para>
+    /// <b>왜 큐가 필요한가.</b> mpv 는 시크가 진행 중일 때 들어온 프레임 스텝을 버린다.
+    /// 역방향 스텝은 내부적으로 시크라서, 역방향을 연달아 보내면 대부분 유실된다.
+    /// </para>
+    /// <code>
+    ///   점프 직후 0ms 에 스텝      →  무시됨
+    ///   역방향 5연속 (간격 0ms)    →  -1 만 반영
+    ///   역방향 5연속 (간격 25ms)   →  -2 만 반영
+    /// </code>
+    /// <para>
+    /// 우클릭 드래그로 프레임을 되감는 동작이 정확히 이 경우라, 이전 시크가 끝난 것을 확인한 뒤에
+    /// 다음 스텝을 보낸다.
+    /// </para>
+    /// </summary>
     public void StepFrame(int direction)
     {
-        if (direction > 0) _mpv.FrameStep();
-        else if (direction < 0) _mpv.FrameBackStep();
+        if (direction == 0) return;
+        _pendingSteps = Math.Clamp(_pendingSteps + Math.Sign(direction), -MaxPendingSteps, MaxPendingSteps);
+        if (!_stepping) _ = PumpStepsAsync();
+    }
+
+    private async Task PumpStepsAsync()
+    {
+        _stepping = true;
+        try
+        {
+            while (_pendingSteps != 0 && !_disposed)
+            {
+                await WaitUntilAsync(() => SeekSettled, SeekSettleTimeout);
+                if (_pendingSteps == 0) break;   // 기다리는 사이 시크가 스텝을 취소했다
+
+                var direction = Math.Sign(_pendingSteps);
+                _pendingSteps -= direction;
+
+                var frameBefore = _mpv.EstimatedFrameNumber;
+                var timeBefore = _mpv.PlaybackTime;
+
+                if (direction > 0)
+                {
+                    _mpv.FrameStep();
+                }
+                else
+                {
+                    _restartCountAtLastSeek = _restartCount;   // 역방향 스텝은 시크다
+                    _mpv.FrameBackStep();
+                }
+
+                // VFR 이면 프레임 번호가 없을 수 있어 시각 변화도 함께 본다
+                await WaitUntilAsync(
+                    () => _mpv.EstimatedFrameNumber != frameBefore || _mpv.PlaybackTime != timeBefore,
+                    StepTimeout);
+            }
+        }
+        finally
+        {
+            _stepping = false;
+        }
+    }
+
+    /// <summary>
+    /// 마지막 시크 이후 PLAYBACK_RESTART 가 왔고, 지금 시크 중이 아닌가.
+    /// <para>
+    /// 둘 다 필요하다. 이벤트만 보면 합쳐지지 않은 앞선 시크의 재시작에 속을 수 있고,
+    /// <c>seeking</c> 속성만 보면 명령 직후 시크가 아직 실행되기 전이라 false 로 읽힌다.
+    /// </para>
+    /// </summary>
+    private bool SeekSettled => _restartCount > _restartCountAtLastSeek && !_mpv.Seeking;
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(5);
     }
 
     public Task<bool> SaveFrameAsync(string path)

@@ -247,6 +247,9 @@ public sealed class MpvClient : IDisposable
     }
 
     public double? PlaybackTime => GetDouble("playback-time");
+
+    /// <summary>시크 중이거나 재생을 다시 시작하는 중인가.</summary>
+    public bool Seeking => GetFlag("seeking");
     public double? Duration => GetDouble("duration");
     public double? ContainerFps => GetDouble("container-fps");
     public double? EstimatedVfFps => GetDouble("estimated-vf-fps");

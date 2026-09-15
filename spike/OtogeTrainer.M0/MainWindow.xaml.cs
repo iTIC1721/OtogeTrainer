@@ -59,7 +59,7 @@ public partial class MainWindow : Window
             enabled: () => GuardEnabled);
 
         _guard.EscapePressed += () => Pause(PauseSource.Escape);
-        _guard.ShortcutRequested += ctx => DispatchShortcut(ctx);
+        _guard.ShortcutHandler = ctx => { DispatchShortcut(ctx); return true; };
         _guard.LeakDetected += RecordLeak;
         _guard.KeyEvaluated += (ctx, decision) =>
         {
