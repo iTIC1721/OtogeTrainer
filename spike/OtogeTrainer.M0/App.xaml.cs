@@ -23,6 +23,12 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Contains("--inputtest"))
+        {
+            Shutdown(await SelfTest.RunInputTestAsync());
+            return;
+        }
+
         if (e.Args.Contains("--windowtest"))
         {
             Shutdown(await SelfTest.RunWindowTestAsync(e.Args));

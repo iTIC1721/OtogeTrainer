@@ -1,4 +1,6 @@
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Text;
 using OtogeTrainer.M0.Mpv;
 
@@ -125,6 +127,88 @@ public static class SelfTest
 
         return result.StartsWith("PASS") ? 0 : 1;
     }
+
+    /// <summary>
+    /// Alt / F10 단독이 창 시스템 메뉴를 여는 누출(§6.2-6)에 대한 회귀 테스트.
+    /// <para>
+    /// 이 경로는 <c>e.Handled = true</c> 로 막히지 않는다 — 메뉴는 라우팅 이벤트가 아니라
+    /// <c>DefWindowProc</c> 의 <c>WM_SYSCOMMAND(SC_KEYMENU)</c> 에서 열리기 때문.
+    /// 가드를 껐을 때 누출이 재현되는지도 함께 확인해야 테스트가 실제로 그 경로를
+    /// 건드리고 있음이 보장된다.
+    /// </para>
+    /// </summary>
+    public static async Task<int> RunInputTestAsync()
+    {
+        const int WM_SYSKEYDOWN = 0x0104;
+        const int WM_SYSKEYUP = 0x0105;
+        const int VK_MENU = 0x12;
+
+        var output = new StringBuilder();
+        void Emit(string line) { output.AppendLine(line); Console.WriteLine(line); }
+
+        var window = new MainWindow();
+        window.Show();
+        window.Activate();
+        await Task.Delay(400);
+
+        var hwnd = new WindowInteropHelper(window).Handle;
+
+        async Task<(int leaks, string detail)> PressAltAsync(bool guardOn)
+        {
+            window.TestPause();
+            window.TestSetGuard(guardOn);
+            window.TestResetLeaks();
+            window.TestPlay();
+            await Task.Delay(150);
+
+            // 실제 Alt 누름/뗌 시퀀스. DefWindowProc 이 WM_SYSKEYUP(VK_MENU) 을 받으면
+            // SC_KEYMENU 를 보낸다.
+            PostMessage(hwnd, WM_SYSKEYDOWN, VK_MENU, 0x20380001);
+            await Task.Delay(80);
+            PostMessage(hwnd, WM_SYSKEYUP, VK_MENU, unchecked((int)0xC0380001));
+            await Task.Delay(400);
+
+            return (window.TestLeakCount, window.TestLeakSummary);
+        }
+
+        Emit("════════════════════════════════════════════════════════════");
+        Emit(" §6.2-6 Alt 시스템 메뉴 회귀 테스트");
+        Emit("════════════════════════════════════════════════════════════");
+        Emit("");
+
+        var failures = 0;
+
+        var off = await PressAltAsync(guardOn: false);
+        var offOk = off.leaks > 0;
+        if (!offOk) failures++;
+        Emit($"가드 OFF (대조군)  누출 {off.leaks}건  {(offOk ? "✓ 경로 재현됨" : "✗ 누출이 재현되지 않음 — 테스트가 이 경로를 못 건드림")}");
+        Emit($"                   {off.detail}");
+        Emit("");
+
+        var on = await PressAltAsync(guardOn: true);
+        var onOk = on.leaks == 0 && window.TestIsPlaying;
+        if (!onOk) failures++;
+        Emit($"가드 ON            누출 {on.leaks}건  재생 유지 {window.TestIsPlaying}  {(onOk ? "✓ 차단됨" : "✗ 여전히 새고 있음")}");
+        Emit($"                   {on.detail}");
+        Emit("");
+
+        Emit("════════════════════════════════════════════════════════════");
+        Emit(failures == 0 ? " 통과" : $" 실패 {failures}건");
+        Emit("════════════════════════════════════════════════════════════");
+        Emit("");
+        Emit("※ Alt+Space 는 lParam 이 0 이 아니므로 차단 대상이 아니다 (FR-502).");
+        Emit("  창 시스템 메뉴가 정상적으로 열리는지는 손으로 확인할 것.");
+
+        window.Close();
+
+        await File.WriteAllTextAsync(
+            Path.Combine(AppContext.BaseDirectory, "m0-inputtest.log"), output.ToString(), Encoding.UTF8);
+
+        return failures == 0 ? 0 : 1;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, int wParam, int lParam);
 
     private static string? FindAsset(string fileName)
     {

@@ -2,9 +2,12 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using OtogeTrainer.Input;
+using OtogeTrainer.M0.Input;
 using OtogeTrainer.M0.Mpv;
 
 namespace OtogeTrainer.M0;
@@ -23,12 +26,20 @@ public partial class PlaybackWindow : Window
     private readonly MpvVideoHost _host = new();
     private readonly DispatcherTimer _stats;
     private readonly List<double> _seekLatencies = [];
+    private readonly WindowInputGuard _guard;
 
     private double _jumpBaseSeconds = 5.0;
+    private bool _lastPlayingState;
 
     public PlaybackWindow()
     {
         InitializeComponent();
+
+        // M0-7 검증 창에도 같은 가드를 건다. 이게 없으면 WPF 가 키를 먼저 먹어서
+        // "mpv 가 키를 먹는지" 를 판단할 수 없다.
+        _guard = new WindowInputGuard(this, isPlaying: () => _mpv.IsAlive && !_mpv.Paused);
+        _guard.EscapePressed += () => { _mpv.Paused = true; SyncPlayButton(); };
+        _guard.ShortcutRequested += DispatchShortcut;
 
         VideoHost.Child = _host;
         _host.HandleReady += hwnd => Dispatcher.BeginInvoke(() => StartMpv(hwnd));
@@ -150,7 +161,23 @@ public partial class PlaybackWindow : Window
     private void OnPlayPause(object sender, RoutedEventArgs e)
     {
         _mpv.Paused = !_mpv.Paused;
-        BtnPlay.Content = _mpv.Paused ? "▶  재생" : "❚❚  일시정지";
+        SyncPlayButton();
+    }
+
+    private void SyncPlayButton()
+        => BtnPlay.Content = _mpv.Paused ? "▶  재생" : "❚❚  일시정지";
+
+    /// <summary>일시정지 상태에서만 도달한다. (재생 중에는 가드가 삼킨다)</summary>
+    private void DispatchShortcut(KeyEventContext ctx)
+    {
+        switch (ctx.EffectiveKey)
+        {
+            case Key.Space: _mpv.Paused = !_mpv.Paused; SyncPlayButton(); break;
+            case Key.Left: _mpv.SeekRelativeExact(-_jumpBaseSeconds * _mpv.Speed); break;
+            case Key.Right: _mpv.SeekRelativeExact(_jumpBaseSeconds * _mpv.Speed); break;
+            case Key.OemComma: _mpv.FrameBackStep(); break;
+            case Key.OemPeriod: _mpv.FrameStep(); break;
+        }
     }
 
     private void OnFrameForward(object sender, RoutedEventArgs e) => _mpv.FrameStep();
@@ -204,6 +231,17 @@ public partial class PlaybackWindow : Window
     private void RenderStats()
     {
         if (!_mpv.IsAlive) return;
+
+        var playing = !_mpv.Paused;
+        if (playing != _lastPlayingState)
+        {
+            _lastPlayingState = playing;
+            _guard.ApplyFocusSuppression(this);
+            SyncPlayButton();
+            TxtGuard.Text = playing
+                ? "🔒 재생 중 · ESC 외 단축키 차단"
+                : "🔓 일시정지 · 단축키 사용";
+        }
 
         var containerFps = _mpv.ContainerFps;
         var vfFps = _mpv.EstimatedVfFps;

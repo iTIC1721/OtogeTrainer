@@ -287,9 +287,17 @@ PC 리듬게임 플레이어가 **자신의 플레이 영상을 반복 재생하
 | 3 | 포커스된 `Slider`(타임라인·볼륨)를 방향키가 움직임 | 위와 동일 + 방향키 소비 |
 | 4 | 방향키 → `KeyboardNavigation` 방향 이동 | 플레이어 루트에 `DirectionalNavigation="None"` |
 | 5 | `Tab` → 포커스 순회 | 플레이어 루트에 `TabNavigation="None"` |
-| 6 | `Alt` / `F10` → 시스템 메뉴 · 액세스 키 | `PreviewKeyDown`에서 `e.Key == Key.System`이면 `e.SystemKey`로 판정 후 소비 |
+| 6 | `Alt` / `F10` → 시스템 메뉴 · 액세스 키 | **`e.Handled`로는 막히지 않는다.** 창 프로시저에서 `WM_SYSCOMMAND(SC_KEYMENU)`를 잘라내야 한다 (아래 주의) |
 | 7 | mpv 자체 키 바인딩 | `--input-default-bindings=no`, `--input-vo-keyboard=no` (§4.3) |
 | 8 | `KeyUp`만 보는 컨트롤 | `PreviewKeyUp`도 동일하게 소비 |
+
+> **§6.2-6 주의 — M0에서 실제로 새는 것을 확인한 항목이다.**
+> 시스템 메뉴는 라우팅 이벤트가 아니라 `DefWindowProc`이 `WM_SYSCOMMAND(SC_KEYMENU)`를
+> 처리하면서 열린다. `PreviewKeyDown`에서 `e.Handled = true`로 소비해도 **메뉴는 그대로 열린다.**
+> `HwndSource.AddHook`으로 메시지 단계에서 잘라내야 한다.
+>
+> 이때 **`lParam`이 0인 경우(= `Alt`/`F10` 단독)만 차단한다.** `Alt+Space`처럼 문자가 붙은
+> 조합은 `lParam`에 그 문자가 담기며, 윈도우 기본 동작이므로 통과시켜야 한다(FR-502).
 
 ### 6.3 처리 순서
 

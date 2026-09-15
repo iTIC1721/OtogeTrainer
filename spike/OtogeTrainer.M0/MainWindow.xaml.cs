@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using OtogeTrainer.Input;
+using OtogeTrainer.M0.Input;
 
 namespace OtogeTrainer.M0;
 
@@ -25,13 +26,9 @@ namespace OtogeTrainer.M0;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int WM_INITMENU = 0x0116;
-    private const int SC_KEYMENU = 0xF100;
-
     private static readonly TimeSpan MouseRecencyWindow = TimeSpan.FromMilliseconds(400);
 
-    private readonly IInputGate _gate = new InputGate();
+    private readonly WindowInputGuard _guard;
     private readonly DispatcherTimer _clock;
     private readonly Stopwatch _elapsed = new();
     private readonly StringBuilder _log = new();
@@ -55,8 +52,22 @@ public partial class MainWindow : Window
         };
         _clock.Tick += (_, _) => RenderClock();
 
-        PreviewKeyDown += OnPreviewKey;
-        PreviewKeyUp += OnPreviewKey;
+        _guard = new WindowInputGuard(
+            this,
+            isPlaying: () => _isPlaying,
+            allowWhilePlaying: () => AllowWhilePlaying,
+            enabled: () => GuardEnabled);
+
+        _guard.EscapePressed += () => Pause(PauseSource.Escape);
+        _guard.ShortcutRequested += ctx => DispatchShortcut(ctx);
+        _guard.LeakDetected += RecordLeak;
+        _guard.KeyEvaluated += (ctx, decision) =>
+        {
+            if (_isPlaying) _keysWhilePlaying++;
+            if (decision == InputDecision.Swallow) _swallowed++;
+            Log(ctx, GuardEnabled ? decision.ToString() : "GUARD-OFF");
+        };
+
         PreviewMouseDown += (_, _) => _lastMouseAt = DateTime.UtcNow;
         PreviewMouseWheel += (_, _) => _lastMouseAt = DateTime.UtcNow;
         PreviewGotKeyboardFocus += OnPreviewGotKeyboardFocus;
@@ -73,72 +84,6 @@ public partial class MainWindow : Window
     private bool MouseWasRecent => DateTime.UtcNow - _lastMouseAt < MouseRecencyWindow;
 
     private enum PauseSource { Escape, Mouse, AppDeactivated, Unexpected }
-
-    // ── 창 프로시저 후크: Alt / F10 이 시스템 메뉴를 여는지 감시 (§6.2-6) ──────
-
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-        if (PresentationSource.FromVisual(this) is HwndSource source)
-            source.AddHook(WndProc);
-    }
-
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        var isKeyMenu = msg == WM_SYSCOMMAND && ((long)wParam & 0xFFF0) == SC_KEYMENU;
-        if ((msg == WM_INITMENU || isKeyMenu) && _isPlaying && !MouseWasRecent)
-            RecordLeak("§6.2-6  Alt/F10 이 시스템 메뉴를 열었음");
-
-        return IntPtr.Zero;
-    }
-
-    // ── 입력 게이트 (SPEC §6.3) ──────────────────────────────────────────────
-
-    private void OnPreviewKey(object sender, KeyEventArgs e)
-    {
-        var ctx = new KeyEventContext(
-            Key: e.Key,
-            SystemKey: e.SystemKey,
-            Modifiers: Keyboard.Modifiers,
-            IsPlayerScreen: true,
-            IsPlaying: _isPlaying,
-            IsTextInputFocused: Keyboard.FocusedElement is TextBoxBase,
-            AllowShortcutsWhilePlaying: AllowWhilePlaying);
-
-        if (_isPlaying && e.IsDown)
-            _keysWhilePlaying++;
-
-        // 가드를 끄면 게이트를 통째로 우회한다 — 누출 재현용 대조군.
-        if (!GuardEnabled)
-        {
-            if (e.IsDown) Log(ctx, "GUARD-OFF", handled: false);
-            return;
-        }
-
-        var decision = _gate.Evaluate(ctx);
-
-        switch (decision)
-        {
-            case InputDecision.PassThrough:
-                break;
-
-            case InputDecision.Escape:
-                e.Handled = true;                       // 일시정지 중이어도 소비한다 (D-3)
-                if (e.IsDown && _isPlaying) Pause(PauseSource.Escape);
-                break;
-
-            case InputDecision.Swallow:
-                e.Handled = true;
-                if (e.IsDown) _swallowed++;
-                break;
-
-            case InputDecision.Dispatch:
-                if (e.IsDown) DispatchShortcut(ctx);
-                break;
-        }
-
-        if (e.IsDown) Log(ctx, decision.ToString(), e.Handled);
-    }
 
     /// <summary>일시정지 상태에서만 도달한다. 실제 단축키 맵 자리.</summary>
     private void DispatchShortcut(in KeyEventContext ctx)
@@ -199,9 +144,6 @@ public partial class MainWindow : Window
         _swallowed = 0;
         _elapsed.Restart();
         _clock.Start();
-
-        // 재생 시작 시 포커스를 영상 표면으로 되돌린다 (§6.2-2 완화).
-        if (GuardEnabled) Keyboard.ClearFocus();
 
         RenderState();
     }
@@ -272,6 +214,19 @@ public partial class MainWindow : Window
     private void OnOpenPlayback(object sender, RoutedEventArgs e)
         => new PlaybackWindow { Owner = this }.Show();
 
+    // ── 자동 입력 테스트용 훅 (--inputtest) ──────────────────────────────────
+
+    internal bool TestIsPlaying => _isPlaying;
+    internal int TestLeakCount => _leaks.Values.Sum();
+    internal string TestLeakSummary => _leaks.Count == 0
+        ? "(없음)"
+        : string.Join(" / ", _leaks.Select(kv => $"{kv.Key} ×{kv.Value}"));
+
+    internal void TestPlay() => Play();
+    internal void TestPause() => Pause(PauseSource.Mouse);
+    internal void TestSetGuard(bool on) { ChkGuard.IsChecked = on; RenderState(); }
+    internal void TestResetLeaks() { _leaks.Clear(); RenderLeaks(); }
+
     private void OnResetLeaks(object sender, RoutedEventArgs e)
     {
         _leaks.Clear();
@@ -285,26 +240,10 @@ public partial class MainWindow : Window
 
     private void OnGuardToggled(object sender, RoutedEventArgs e) => RenderState();
 
-    /// <summary>
-    /// 포커스 이동 억제는 <b>재생 중에만</b> 건다. 일시정지 상태에서는 키보드로 모든 컨트롤에
-    /// 닿을 수 있어야 하기 때문(NFR-11). 재생으로 진입할 때 <see cref="Keyboard.ClearFocus"/> 로
-    /// 포커스를 떼어 내는 것이 §6.2-2 의 실제 완화책이다.
-    /// </summary>
     private void ApplyGuard()
     {
         if (!IsLoaded) return;
-
-        var suppress = GuardEnabled && _isPlaying && !AllowWhilePlaying;
-
-        KeyboardNavigation.SetTabNavigation(PlayerRoot,
-            suppress ? KeyboardNavigationMode.None : KeyboardNavigationMode.Continue);
-        KeyboardNavigation.SetDirectionalNavigation(PlayerRoot,
-            suppress ? KeyboardNavigationMode.None : KeyboardNavigationMode.Continue);
-
-        // 컨트롤 바 버튼과 슬라이더가 포커스를 가져가지 못하게 한다.
-        // 가드 토글 자체는 언제나 조작 가능해야 하므로 CheckBox 는 제외.
-        foreach (var focusable in EnumerateFocusables(PlayerRoot))
-            focusable.Focusable = !suppress || focusable is CheckBox;
+        _guard.ApplyFocusSuppression(PlayerRoot);
     }
 
     private static string Describe(object? element) => element switch
@@ -316,17 +255,6 @@ public partial class MainWindow : Window
         null => "(null)",
         _ => element.GetType().Name,
     };
-
-    private static IEnumerable<Control> EnumerateFocusables(DependencyObject root)
-    {
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is Button or Slider or CheckBox) yield return (Control)child;
-            foreach (var nested in EnumerateFocusables(child)) yield return nested;
-        }
-    }
 
     // ── 렌더링 ───────────────────────────────────────────────────────────────
 
@@ -374,11 +302,11 @@ public partial class MainWindow : Window
             : $"의도치 않은 중단 누계 {_unexpectedPauses}회";
     }
 
-    private void Log(in KeyEventContext ctx, string decision, bool handled)
+    private void Log(in KeyEventContext ctx, string decision)
     {
         var key = ctx.Key == Key.System ? $"System({ctx.SystemKey})" : ctx.Key.ToString();
         var mods = ctx.Modifiers == ModifierKeys.None ? "" : $"{ctx.Modifiers}+";
-        _log.Insert(0, $"{DateTime.Now:HH:mm:ss.fff}  {mods}{key,-18} → {decision,-12} handled={handled}\n");
+        _log.Insert(0, $"{DateTime.Now:HH:mm:ss.fff}  {mods}{key,-18} → {decision}\n");
 
         if (_log.Length > 12_000) _log.Length = 12_000;
         TxtLog.Text = _log.ToString();

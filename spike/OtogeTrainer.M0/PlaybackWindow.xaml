@@ -29,6 +29,9 @@
                 <Button Content="A/V 싱크"           Tag="avsync_1s_flash_click.mp4" Click="OnLoadAsset" />
                 <TextBlock x:Name="TxtFile" Text="(파일 없음)" Foreground="{StaticResource Fg1}"
                            VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="TxtGuard" Text="🔓 일시정지 · 단축키 사용"
+                           Foreground="{StaticResource Warn}" VerticalAlignment="Center"
+                           Margin="16,0,0,0" FontWeight="SemiBold" />
             </StackPanel>
         </Border>
 
