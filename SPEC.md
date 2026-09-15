@@ -2,7 +2,7 @@
 
 - **버전**: v0.1 (기획 초안)
 - **작성일**: 2026-09-15
-- **상태**: 구현 착수 전 / 검토 요망
+- **상태**: M1 구현 완료 · 수동 확인 대기 ([M1 진행 기록](docs/M1-PROGRESS.md))
 - **관련 문서**: [UI 청사진](docs/UI-BLUEPRINT.md) · [로드맵](docs/ROADMAP.md) · [결정 기록](docs/DECISIONS.md)
 
 ---
@@ -131,10 +131,10 @@ PC 리듬게임 플레이어가 **자신의 플레이 영상을 반복 재생하
 |---|---|---|
 | 런타임 | .NET 8 (LTS), x64 | self-contained 배포 |
 | UI | WPF + CommunityToolkit.Mvvm | 다크 테마 자체 구현 |
-| 저장소 | SQLite (`Microsoft.Data.Sqlite` + Dapper) | `%APPDATA%\OtogeTrainer\library.db` |
+| 저장소 | SQLite (`Microsoft.Data.Sqlite`) | `%APPDATA%\OtogeTrainer\library.db`. 스키마가 작아 Dapper 는 쓰지 않는다 (M1) |
 | 설정 | JSON (`settings.json`) | 사람이 편집 가능 |
 | 썸네일 | libmpv `screenshot-to-file` | 별도 ffmpeg 의존 회피 |
-| 로깅 | Serilog (롤링 파일) | 재생 이벤트 · 오류 중심. 키 입력 내용은 기록하지 않음 |
+| 로깅 | 크래시 로그만 (`logs/crash-*.log`) | 키 입력 내용은 기록하지 않음. 재생 이벤트 로깅이 필요해지면 Serilog 도입 검토 |
 | 테스트 | xUnit + 엔진 통합 테스트 | 검증용 클립 사용 |
 
 ---
@@ -157,7 +157,9 @@ PC 리듬게임 플레이어가 **자신의 플레이 영상을 반복 재생하
 | FR-108 | 목록에서 항목 제거(DB에서만) / 파일 위치 열기 | P1 |
 | FR-109 | 플레이리스트(세트) 구성 및 연속 재생 | P2 |
 
-**파일 식별 규칙** — 경로 변경에 강인하도록 `(파일 크기, 재생 길이(ms), 선두 1MB + 말미 1MB의 SHA-256)` 조합을 지문으로 사용한다. 경로는 부가 정보로만 취급하며, 지문이 일치하면 같은 영상으로 간주해 기존 메타데이터를 승계한다.
+**파일 식별 규칙** — 경로 변경에 강인하도록 `(파일 크기, 선두 1MB + 말미 1MB의 SHA-256)` 조합을 지문으로 사용한다. 경로는 부가 정보로만 취급하며, 지문이 일치하면 같은 영상으로 간주해 기존 메타데이터를 승계한다.
+
+> **M1 에서 재생 길이를 뺐다.** 길이는 엔진이 파일을 열어야 알 수 있어서, 넣으면 영상을 연 *뒤에야* DB 를 조회할 수 있다. 그러면 마지막 위치 · 배속 · 오프셋을 첫 프레임 전에 적용하지 못해 화면이 한 번 튄다(FR-103). 크기와 앞뒤 해시만으로 캡처 파일은 충분히 구별된다 — 선두에는 컨테이너 헤더와 생성 시각이, 말미에는 인덱스가 있다. 가운데만 다른 파일을 구별하지 못하는 한계는 테스트로 명시해 두었다.
 
 ### 5.2 기본 재생 제어 (FR-2xx)
 
@@ -405,6 +407,9 @@ D-4에 따라 재생 중 예외 키가 없으므로, **단축키 목록에 있�
 
 ### 8.2 스키마 (초안)
 
+> **M1 구현 상태**: `videos` · `bookmarks` 만 만들었다. 나머지는 해당 기능이 들어올 때 마이그레이션으로 추가한다.
+> 스키마 버전은 `schema_meta` 테이블 대신 **`PRAGMA user_version`** 에 둔다 — DB 헤더에 저장되어 트랜잭션과 함께 롤백되므로, 마이그레이션이 중간에 실패해도 버전만 앞서 나가지 않는다. 이 앱보다 새 버전의 DB 는 열기를 거부한다.
+
 ```sql
 CREATE TABLE videos (
   id               INTEGER PRIMARY KEY,
@@ -460,7 +465,7 @@ CREATE TABLE tags        (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 CREATE TABLE video_tags  (video_id INTEGER, tag_id INTEGER, PRIMARY KEY(video_id, tag_id));
 CREATE TABLE folders     (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE,
                           default_av_offset_ms INTEGER, last_scan_at TEXT);
-CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT);   -- 마이그레이션 버전
+-- 스키마 버전: PRAGMA user_version (M1 에서 schema_meta 테이블을 대체)
 ```
 
 ---
