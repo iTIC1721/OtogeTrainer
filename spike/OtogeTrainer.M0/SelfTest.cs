@@ -1,5 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Text;
 using OtogeTrainer.M0.Mpv;
@@ -152,44 +154,118 @@ public static class SelfTest
         await Task.Delay(400);
 
         var hwnd = new WindowInteropHelper(window).Handle;
+        var source = PresentationSource.FromVisual(window)!;
+        var failures = 0;
 
-        async Task<(int leaks, string detail)> PressAltAsync(bool guardOn)
+        async Task StartPlayingAsync(bool guardOn = true)
         {
             window.TestPause();
             window.TestSetGuard(guardOn);
             window.TestResetLeaks();
             window.TestPlay();
             await Task.Delay(150);
+        }
 
-            // 실제 Alt 누름/뗌 시퀀스. DefWindowProc 이 WM_SYSKEYUP(VK_MENU) 을 받으면
-            // SC_KEYMENU 를 보낸다.
-            PostMessage(hwnd, WM_SYSKEYDOWN, VK_MENU, 0x20380001);
-            await Task.Delay(80);
-            PostMessage(hwnd, WM_SYSKEYUP, VK_MENU, unchecked((int)0xC0380001));
-            await Task.Delay(400);
+        // WPF 라우팅 이벤트를 직접 올린다.
+        //
+        // PostMessage 로 보낸 키는 창이 실제 포그라운드 포커스를 갖지 못하면 WPF 가
+        // 무시해 버려서, 스크립트로 실행할 때 결과를 신뢰할 수 없다. 여기서 검증하려는
+        // 것은 "가드 → 커맨드" 배선이므로 라우팅 이벤트를 직접 올리는 편이 정확하다.
+        void RaiseKey(Key key, bool down)
+        {
+            var evt = down ? Keyboard.PreviewKeyDownEvent : Keyboard.PreviewKeyUpEvent;
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
+            {
+                RoutedEvent = evt,
+            });
+        }
 
-            return (window.TestLeakCount, window.TestLeakSummary);
+        async Task PressAsync(Key key)
+        {
+            RaiseKey(key, down: true);
+            await Task.Delay(60);
+            RaiseKey(key, down: false);
+            await Task.Delay(120);
+        }
+
+        void Check(bool ok, string label, string detail)
+        {
+            if (!ok) failures++;
+            Emit($"{(ok ? "  ✓" : "  ✗")} {label,-44} {detail}");
         }
 
         Emit("════════════════════════════════════════════════════════════");
-        Emit(" §6.2-6 Alt 시스템 메뉴 회귀 테스트");
+        Emit(" M0-6 입력 가드 회귀 테스트");
         Emit("════════════════════════════════════════════════════════════");
         Emit("");
 
-        var failures = 0;
+        // ── 키 이벤트가 창에 도달하는가 ──────────────────────────────────────
+        // 이것이 깨지면 다른 키가 "잘 막히는" 것처럼 보이지만 실제로는 차단이 아니라
+        // 이벤트 소실이며, ESC 까지 못 받는다.
+        Emit("FR-504  재생 중에도 키 이벤트가 창에 도달해야 한다");
 
-        var off = await PressAltAsync(guardOn: false);
-        var offOk = off.leaks > 0;
-        if (!offOk) failures++;
-        Emit($"가드 OFF (대조군)  누출 {off.leaks}건  {(offOk ? "✓ 경로 재현됨" : "✗ 누출이 재현되지 않음 — 테스트가 이 경로를 못 건드림")}");
-        Emit($"                   {off.detail}");
+        await StartPlayingAsync();
+        var focused = window.TestFocusedElement;
+        Check(focused is not null,
+              "재생 중 키보드 포커스가 살아 있는가",
+              $"FocusedElement = {focused?.GetType().Name ?? "null"}");
+        Check(focused is Window,
+              "포커스가 컨트롤이 아닌 창에 있는가 (§6.2-2)",
+              $"{focused?.GetType().Name ?? "null"}");
         Emit("");
 
-        var on = await PressAltAsync(guardOn: true);
-        var onOk = on.leaks == 0 && window.TestIsPlaying;
-        if (!onOk) failures++;
-        Emit($"가드 ON            누출 {on.leaks}건  재생 유지 {window.TestIsPlaying}  {(onOk ? "✓ 차단됨" : "✗ 여전히 새고 있음")}");
-        Emit($"                   {on.detail}");
+        // ── ESC 는 언제나 살아 있어야 한다 ───────────────────────────────────
+        Emit("FR-504 / D-3  ESC → 일시정지");
+
+        await StartPlayingAsync();
+        await PressAsync(Key.Escape);
+        Check(!window.TestIsPlaying, "재생 중 ESC 로 일시정지되는가",
+              $"재생 {window.TestIsPlaying}");
+
+        await PressAsync(Key.Escape);
+        Check(!window.TestIsPlaying, "일시정지 중 ESC 는 아무 일도 하지 않는가",
+              $"재생 {window.TestIsPlaying}");
+        Emit("");
+
+        // ── ESC 외에는 전부 막혀야 한다 ──────────────────────────────────────
+        Emit("FR-501 / D-4  ESC 외 키는 재생에 영향이 없다");
+
+        await StartPlayingAsync();
+        foreach (var key in new[] { Key.Space, Key.Left, Key.Right, Key.D1, Key.F11, Key.M, Key.T })
+            await PressAsync(key);
+        Check(window.TestIsPlaying, "난타해도 재생이 유지되는가",
+              $"재생 {window.TestIsPlaying}");
+
+        window.TestPause();
+        await Task.Delay(100);
+        await PressAsync(Key.Space);
+        Check(window.TestIsPlaying, "일시정지 중 Space 로 재생이 시작되는가",
+              $"재생 {window.TestIsPlaying}");
+        Emit("");
+
+        // ── §6.2-6 Alt 시스템 메뉴 (Win32 경로라 PostMessage 로 검증) ────────
+        Emit("§6.2-6  Alt 단독 → 시스템 메뉴");
+
+        async Task SendAltAsync()
+        {
+            // 스캔코드(0x38)와 컨텍스트 비트(bit 29)를 제대로 넣어야 DefWindowProc 이
+            // Alt 로 취급해 SC_KEYMENU 를 만든다. 틀리면 테스트가 조용히 통과한다.
+            PostMessage(hwnd, WM_SYSKEYDOWN, VK_MENU, unchecked((int)0x20380001));
+            await Task.Delay(80);
+            PostMessage(hwnd, WM_SYSKEYUP, VK_MENU, unchecked((int)0xC0380001));
+            await Task.Delay(350);
+        }
+
+        await StartPlayingAsync(guardOn: false);
+        await SendAltAsync();
+        Check(window.TestLeakCount > 0, "가드 OFF: 누출이 재현되는가 (대조군)",
+              $"누출 {window.TestLeakCount}건");
+
+        await StartPlayingAsync(guardOn: true);
+        await SendAltAsync();
+        Check(window.TestLeakCount == 0 && window.TestIsPlaying,
+              "가드 ON: 차단되고 재생이 유지되는가",
+              $"누출 {window.TestLeakCount}건, 재생 {window.TestIsPlaying}");
         Emit("");
 
         Emit("════════════════════════════════════════════════════════════");

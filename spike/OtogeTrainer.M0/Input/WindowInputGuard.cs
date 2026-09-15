@@ -63,6 +63,10 @@ public sealed class WindowInputGuard
 
     private void OnKey(object sender, KeyEventArgs e)
     {
+        // e.IsDown 은 "지금 그 키가 물리적으로 눌려 있는가"라서, 우리가 알고 싶은
+        // "이게 누름 이벤트인가 뗌 이벤트인가"와 미묘하게 다르다. 라우팅 이벤트로 판정한다.
+        var isDown = e.RoutedEvent == Keyboard.PreviewKeyDownEvent;
+
         var ctx = new KeyEventContext(
             Key: e.Key,
             SystemKey: e.SystemKey,
@@ -75,7 +79,7 @@ public sealed class WindowInputGuard
         if (!_enabled())
         {
             // 대조군: 가드를 끄면 WPF 기본 동작이 그대로 드러난다.
-            if (e.IsDown) KeyEvaluated?.Invoke(ctx, InputDecision.PassThrough);
+            if (isDown) KeyEvaluated?.Invoke(ctx, InputDecision.PassThrough);
             return;
         }
 
@@ -88,7 +92,7 @@ public sealed class WindowInputGuard
 
             case InputDecision.Escape:
                 e.Handled = true;                            // 일시정지 중이어도 소비한다 (D-3)
-                if (e.IsDown && ctx.IsPlaying) EscapePressed?.Invoke();
+                if (isDown && ctx.IsPlaying) EscapePressed?.Invoke();
                 break;
 
             case InputDecision.Swallow:
@@ -96,11 +100,11 @@ public sealed class WindowInputGuard
                 break;
 
             case InputDecision.Dispatch:
-                if (e.IsDown) ShortcutRequested?.Invoke(ctx);
+                if (isDown) ShortcutRequested?.Invoke(ctx);
                 break;
         }
 
-        if (e.IsDown) KeyEvaluated?.Invoke(ctx, decision);
+        if (isDown) KeyEvaluated?.Invoke(ctx, decision);
     }
 
     /// <summary>
@@ -152,8 +156,19 @@ public sealed class WindowInputGuard
         foreach (var control in EnumerateControls(root))
             control.Focusable = !suppress || control is CheckBox;
 
-        // 재생 진입 시 포커스를 컨트롤에서 떼어 내는 것이 §6.2-2 의 실제 완화책이다.
-        if (suppress) Keyboard.ClearFocus();
+        // §6.2-2 의 실제 완화책: 포커스를 컨트롤에서 떼어 낸다.
+        //
+        // ★ Keyboard.ClearFocus() 를 쓰면 안 된다. 포커스가 null 이 되면 키 이벤트가
+        //   라우팅될 대상이 없어져 Window.PreviewKeyDown 자체가 발생하지 않는다.
+        //   그러면 ESC 까지 못 받아 일시정지가 불가능해진다(FR-504 위반). 다른 키가
+        //   "잘 막히는" 것처럼 보이는 것도 차단이 아니라 이벤트 소실일 뿐이다.
+        //
+        //   창 자신에게 포커스를 주면 컨트롤에서는 떼어 내면서 키 이벤트는 계속 받는다.
+        if (suppress || Keyboard.FocusedElement is null)
+        {
+            _window.Focusable = true;
+            Keyboard.Focus(_window);
+        }
     }
 
     private static IEnumerable<Control> EnumerateControls(DependencyObject root)

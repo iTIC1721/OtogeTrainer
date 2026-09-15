@@ -217,6 +217,7 @@ public partial class MainWindow : Window
     // ── 자동 입력 테스트용 훅 (--inputtest) ──────────────────────────────────
 
     internal bool TestIsPlaying => _isPlaying;
+    internal object? TestFocusedElement => Keyboard.FocusedElement;
     internal int TestLeakCount => _leaks.Values.Sum();
     internal string TestLeakSummary => _leaks.Count == 0
         ? "(없음)"
