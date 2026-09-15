@@ -1,0 +1,43 @@
+# ---- .NET ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+artifacts/
+
+# ---- 네이티브 런타임 (저장소에 넣지 않는다) ----
+# libmpv / ffmpeg 등은 각자 로컬에 배치. docs/M0-FINDINGS.md 의 배치 안내 참조.
+runtimes/
+native/
+*.dll
+*.so
+*.dylib
+!**/packages.lock.json
+
+# ---- 테스트 자산 ----
+# 검증용 클립과 개인 캡처 영상은 커밋하지 않는다 (용량 + D-6 공개 대비)
+tests/assets/
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.ts
+*.m2ts
+*.flv
+*.wmv
+
+# ---- 로컬 설정 / 산출물 ----
+*.log
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
