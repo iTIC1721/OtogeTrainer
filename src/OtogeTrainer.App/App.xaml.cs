@@ -41,10 +41,11 @@ public partial class App : Application
         DispatcherUnhandledException += (_, ex) =>
         {
             LogCrash(ex.Exception);
+            ex.Handled = true;
+            if (smokeTest) return;   // 대화상자가 자동 검증을 멈춰 세우지 않도록. 크래시 로그로 판정한다.
             MessageBox.Show(
                 $"예상하지 못한 오류가 발생했습니다.\n\n{ex.Exception.Message}\n\n로그: {_paths.LogDirectory}",
                 "OtogeTrainer", MessageBoxButton.OK, MessageBoxImage.Error);
-            ex.Handled = true;
         };
 
         var db = new LibraryDatabase(_paths.DatabasePath);

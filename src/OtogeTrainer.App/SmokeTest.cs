@@ -265,6 +265,26 @@ internal static class SmokeTest
 
             Check(shell.IsLibraryScreen, "라이브러리로 돌아옴 (검은 화면에 두지 않음)");
             Check(!string.IsNullOrEmpty(shell.Notice), "오류 안내 표시", shell.Notice?.Split('\n')[0] ?? "");
+
+            // ── 10. 창 닫기 ─────────────────────────────────────────────────
+            // 라이브러리 화면에서 닫으면 저장할 것이 없어 종료 저장이 동기로 끝난다. 그 경로에서
+            // Closing 도중 Close() 를 다시 불러 예외가 났었다(수동 사용 중 발견).
+            Emit("");
+            Emit("10. 창 닫기");
+            Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;   // 닫혀도 검증은 계속
+            var crashLog = Path.Combine(paths.LogDirectory, $"crash-{DateTime.Now:yyyyMMdd}.log");
+            var crashBefore = File.Exists(crashLog) ? new FileInfo(crashLog).Length : 0;
+
+            var closed = false;
+            window.Closed += (_, _) => closed = true;
+            window.Close();
+            await WaitUntil(() => closed, 3000);
+            await Task.Delay(300);
+
+            var crashAfter = File.Exists(crashLog) ? new FileInfo(crashLog).Length : 0;
+            Check(closed && window.TestShutdownSaved, "라이브러리 화면에서 창이 닫힘");
+            Check(crashAfter == crashBefore, "닫는 중 예외 없음",
+                  crashAfter == crashBefore ? "" : File.ReadAllLines(crashLog).FirstOrDefault(l => l.Contains("Exception")) ?? "");
         }
         catch (Exception ex)
         {

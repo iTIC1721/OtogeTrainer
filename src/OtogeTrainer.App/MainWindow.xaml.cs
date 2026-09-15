@@ -109,8 +109,14 @@ public partial class MainWindow : Window
         catch (IOException) { /* 종료를 막지는 않는다 */ }
 
         _shutdownSaved = true;
-        Close();
+
+        // Closing 이벤트가 끝난 뒤에 다시 닫는다. 라이브러리 화면에서는 저장할 게 없어
+        // ShutdownAsync 가 동기로 끝나므로, 여기서 곧바로 Close() 를 부르면 아직 Closing
+        // 처리 도중이라 "닫는 중에는 Close 를 호출할 수 없습니다" 예외가 난다.
+        _ = Dispatcher.BeginInvoke(Close);
     }
+
+    internal bool TestShutdownSaved => _shutdownSaved;
 
     // ── 자동 검증용 (--smoketest) ────────────────────────────────────────────
 
