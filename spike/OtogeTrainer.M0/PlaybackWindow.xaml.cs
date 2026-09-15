@@ -7,8 +7,9 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using OtogeTrainer.Input;
-using OtogeTrainer.M0.Input;
+
 using OtogeTrainer.M0.Mpv;
+using OtogeTrainer.Playback.Mpv;
 
 namespace OtogeTrainer.M0;
 

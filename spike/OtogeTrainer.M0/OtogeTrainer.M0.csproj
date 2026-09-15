@@ -4,9 +4,6 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
     <RootNamespace>OtogeTrainer.M0</RootNamespace>
     <AssemblyName>OtogeTrainer.M0</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -14,14 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OtogeTrainer.Input\OtogeTrainer.Input.csproj" />
-  </ItemGroup>
-
-  <!--
-    libmpv 는 저장소에 넣지 않는다(.gitignore). spike/native/ 에 놓여 있으면 출력 폴더로
-    복사하고, 없으면 조용히 건너뛴다 - M0-6(입력 게이트)은 libmpv 없이도 돌아야 하기 때문.
-  -->
-  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)\..\native\libmpv-2.dll')">
-    <None Include="..\native\libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="..\..\src\OtogeTrainer.Playback\OtogeTrainer.Playback.csproj" />
   </ItemGroup>
 
 </Project>

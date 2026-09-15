@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>OtogeTrainer.App</RootNamespace>
+    <AssemblyName>OtogeTrainer</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OtogeTrainer.Core\OtogeTrainer.Core.csproj" />
+    <ProjectReference Include="..\OtogeTrainer.Data\OtogeTrainer.Data.csproj" />
+    <ProjectReference Include="..\OtogeTrainer.Input\OtogeTrainer.Input.csproj" />
+    <ProjectReference Include="..\OtogeTrainer.Playback\OtogeTrainer.Playback.csproj" />
+  </ItemGroup>
+
+</Project>

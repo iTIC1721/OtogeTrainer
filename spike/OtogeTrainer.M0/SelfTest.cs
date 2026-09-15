@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Text;
 using OtogeTrainer.M0.Mpv;
+using OtogeTrainer.Playback.Mpv;
 
 namespace OtogeTrainer.M0;
 

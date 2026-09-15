@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
-namespace OtogeTrainer.M0.Mpv;
+namespace OtogeTrainer.Playback.Mpv;
 
 /// <summary>
 /// libmpv 를 담을 자식 HWND 를 만들어 WPF 비주얼 트리에 끼워 넣는다. (M0-1)

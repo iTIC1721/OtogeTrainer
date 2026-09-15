@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 도메인 모델과 순수 규칙. UI·DB·재생 엔진 어디에도 의존하지 않는다. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OtogeTrainer.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

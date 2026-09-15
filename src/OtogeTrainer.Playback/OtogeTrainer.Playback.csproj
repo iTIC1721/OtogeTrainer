@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>OtogeTrainer.Playback</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OtogeTrainer.Core\OtogeTrainer.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    libmpv 는 저장소에 넣지 않는다. native/ 에 있으면 출력 폴더로 복사되며,
+    이 프로젝트를 참조하는 모든 실행 파일에도 전이적으로 따라간다.
+  -->
+  <ItemGroup Condition="Exists('$(OtogeNativeDir)libmpv-2.dll')">
+    <None Include="$(OtogeNativeDir)libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

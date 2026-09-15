@@ -4,9 +4,9 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using OtogeTrainer.Input;
 
-namespace OtogeTrainer.M0.Input;
+
+namespace OtogeTrainer.Input;
 
 /// <summary>
 /// 창 하나에 입력 게이트를 붙인다. 키를 만지는 곳은 여기 한 군데뿐이어야 한다. (SPEC R7)

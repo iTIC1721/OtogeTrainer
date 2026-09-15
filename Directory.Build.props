@@ -1,0 +1,23 @@
+<Project>
+
+  <!-- 모든 프로젝트 공통 설정 -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- libmpv-2.dll 이 x64 전용이므로 프로세스도 x64 로 고정한다. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- 제품 코드는 경고를 오류로 다룬다. 스파이크와 테스트는 제외. -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('\src\'))">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- libmpv 는 저장소 루트의 native/ 에 둔다 (.gitignore). -->
+  <PropertyGroup>
+    <OtogeNativeDir>$(MSBuildThisFileDirectory)native\</OtogeNativeDir>
+  </PropertyGroup>
+
+</Project>

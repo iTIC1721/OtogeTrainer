@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace OtogeTrainer.M0.Mpv;
+namespace OtogeTrainer.Playback.Mpv;
 
 /// <summary>libmpv client API 이벤트 ID. (client.h)</summary>
 public enum MpvEventId

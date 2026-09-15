@@ -8,7 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using OtogeTrainer.Input;
-using OtogeTrainer.M0.Input;
+
 
 namespace OtogeTrainer.M0;
 
