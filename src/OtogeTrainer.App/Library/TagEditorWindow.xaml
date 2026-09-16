@@ -1,0 +1,36 @@
+<Window x:Class="OtogeTrainer.App.Library.TagEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="태그 편집 — OtogeTrainer"
+        Width="520" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{StaticResource Bg0}" FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True">
+
+    <StackPanel Margin="24,20,24,20">
+        <TextBlock x:Name="VideoTitle" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
+                   Text="쉼표로 구분합니다. 예: iidx, 연습중, 트릴 · 태그로 검색하거나 목록을 거를 수 있습니다." />
+
+        <TextBox x:Name="TagsBox" Margin="0,14,0,0" />
+
+        <TextBlock x:Name="ExistingLabel" Margin="0,14,0,6" Text="기존 태그 — 누르면 추가" Style="{StaticResource Caption}" />
+        <ItemsControl x:Name="ExistingTags" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Style="{StaticResource Chip}" Content="{Binding}" Click="OnExistingTag" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <DockPanel Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="저장" MinWidth="88"
+                    IsDefault="True" Click="OnSave" />
+            <Button DockPanel.Dock="Right" Content="취소" MinWidth="88" Margin="0,0,8,0" IsCancel="True" />
+            <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="Enter 저장 · Esc 취소" />
+        </DockPanel>
+    </StackPanel>
+</Window>

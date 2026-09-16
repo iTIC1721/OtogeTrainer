@@ -148,5 +148,31 @@ internal static class Migrations
                 UNIQUE (video_id, slot)
             );
             """),
+
+        new(2, "폴더 · 태그 (M2 — FR-104 · FR-107 · FR-405)",
+            """
+            -- 경로는 정규화해서(끝 구분자 없음) 넣는다. Windows 경로는 대소문자를 가리지 않는다.
+            CREATE TABLE folders (
+                id                  INTEGER PRIMARY KEY,
+                path                TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+                default_av_offset_ms INTEGER,      -- NULL 이면 지정 안 함 (상위 폴더를 따른다)
+                added_at            TEXT    NOT NULL,
+                last_scan_at        TEXT
+            );
+
+            CREATE TABLE tags (
+                id   INTEGER PRIMARY KEY,
+                name TEXT    NOT NULL UNIQUE COLLATE NOCASE
+            );
+
+            CREATE TABLE video_tags (
+                video_id INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+                tag_id   INTEGER NOT NULL REFERENCES tags (id) ON DELETE CASCADE,
+                PRIMARY KEY (video_id, tag_id)
+            ) WITHOUT ROWID;
+
+            CREATE INDEX ix_video_tags_tag ON video_tags (tag_id);
+            CREATE INDEX ix_videos_path ON videos (path COLLATE NOCASE);
+            """),
     ];
 }

@@ -1,0 +1,119 @@
+<Window x:Class="OtogeTrainer.App.Library.FoldersWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:OtogeTrainer.App"
+        xmlns:lib="clr-namespace:OtogeTrainer.App.Library"
+        Title="폴더 — OtogeTrainer"
+        Width="720" SizeToContent="Height" MaxHeight="760"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{StaticResource Bg0}" FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <app:HasValueToVisibilityConverter x:Key="HasValue" />
+        <app:InverseBoolToVisibilityConverter x:Key="InverseBool" />
+    </Window.Resources>
+
+    <DockPanel Margin="24,20,24,20">
+        <StackPanel DockPanel.Dock="Top">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="＋  폴더 추가"
+                        Command="{Binding AddCommand}" />
+                <TextBlock Text="폴더" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
+                       Text="녹화 폴더를 등록하면 앱을 켤 때마다 새 영상을 찾아 목록에 올립니다 (하위 폴더 포함). 기본 오프셋은 그 폴더 아래 영상 중 영상별 오프셋을 조정하지 않은 영상에 적용됩니다. 녹화 환경(캡처 장치 · 게임)별로 폴더를 나눠 두면 편합니다." />
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom">
+            <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="5" Background="{StaticResource Bg2}"
+                    Visibility="{Binding Notice, Converter={StaticResource HasValue}}">
+                <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" FontSize="12.5" />
+            </Border>
+            <DockPanel Margin="0,18,0,0">
+                <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="닫기" MinWidth="88"
+                        Click="OnClose" IsDefault="True" />
+                <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,16,0"
+                           Text="등록을 해제해도 파일은 지우지 않습니다. 한 번도 열지 않은 영상만 목록에서 빠지고, 재생 기록 · 북마크 · 태그 · 오프셋이 있는 영상은 남습니다." />
+            </DockPanel>
+        </StackPanel>
+
+        <Border Margin="0,16,0,0" Background="{StaticResource Bg1}" CornerRadius="6" Padding="8">
+            <Grid>
+                <TextBlock Text="등록된 폴더가 없습니다." Style="{StaticResource Caption}" FontSize="13"
+                           HorizontalAlignment="Center" Margin="0,24"
+                           Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False"
+                              Visibility="{Binding IsEmpty, Converter={StaticResource InverseBool}}">
+                    <ItemsControl ItemsSource="{Binding Folders}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type lib:FolderItem}">
+                                <Grid Margin="8,8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel>
+                                        <TextBlock x:Name="PathText" Text="{Binding Path}" FontSize="14"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                                        <TextBlock x:Name="ScanText" Text="{Binding LastScanText}" Style="{StaticResource Caption}"
+                                                   Margin="0,2,0,0" HorizontalAlignment="Left" />
+                                    </StackPanel>
+
+                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" VerticalAlignment="Top"
+                                            Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}">
+                                        <TextBlock Text="등록 해제" Foreground="{StaticResource Danger}" />
+                                    </Button>
+
+                                    <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                                        <TextBlock Text="기본 오프셋" Style="{StaticResource Caption}" Margin="0,0,10,0" />
+                                        <ItemsControl ItemsSource="{Binding Steps}" Focusable="False">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type lib:FolderOffsetStep}">
+                                                    <Button Margin="0,0,4,0" MinWidth="40" Padding="8,3"
+                                                            Content="{Binding DeltaMs}" ContentStringFormat="{}{0:+0;−0}"
+                                                            Command="{Binding DataContext.AdjustOffsetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="OffsetValue" Text="{Binding OffsetText}" Style="{StaticResource MonoText}"
+                                                   FontSize="14" MinWidth="96" Margin="8,0" VerticalAlignment="Center" />
+                                        <Button Style="{StaticResource GhostButton}" Content="지정 안 함으로"
+                                                Command="{Binding DataContext.ClearOffsetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                Visibility="{Binding HasOffset, Converter={StaticResource BoolToVisibility}}"
+                                                ToolTip="이 폴더는 기본 오프셋을 정하지 않습니다 (상위 폴더에 있으면 그것을 따릅니다)" />
+                                    </WrapPanel>
+                                </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding HasOffset}" Value="False">
+                                        <Setter TargetName="OffsetValue" Property="Foreground" Value="{StaticResource Fg2}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding HasOffset}" Value="True">
+                                        <Setter TargetName="OffsetValue" Property="Foreground" Value="{StaticResource Warn}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Exists}" Value="False">
+                                        <Setter TargetName="PathText" Property="Opacity" Value="0.55" />
+                                        <Setter TargetName="ScanText" Property="Text" Value="⚠ 폴더를 찾을 수 없음 (외장 디스크가 빠졌거나 이름이 바뀜)" />
+                                        <Setter TargetName="ScanText" Property="Foreground" Value="{StaticResource Danger}" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </DockPanel>
+</Window>

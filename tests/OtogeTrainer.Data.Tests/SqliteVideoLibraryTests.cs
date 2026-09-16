@@ -77,7 +77,6 @@ public sealed class SqliteVideoLibraryTests : IAsyncLifetime
         Assert.Equal("conflict_HARD", v.Title);
         Assert.Equal(0, v.LastPositionMs);
         Assert.Null(v.AvOffsetMs);
-        Assert.Equal(0, v.EffectiveOffsetMs);
         Assert.Equal(_clock.Now, v.AddedAt);
     }
 

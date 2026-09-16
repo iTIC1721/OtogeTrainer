@@ -41,6 +41,16 @@ public sealed partial class ShellViewModel : ObservableObject
 
         Library.OpenPath = OpenPathAsync;
         Library.Notify = message => Notice = message;
+        Library.EditTagsDialog = (item, existing) =>
+        {
+            var window = new TagEditorWindow(item.Title, item.TagList, existing) { Owner = System.Windows.Application.Current.MainWindow };
+            return window.ShowDialog() == true ? window.Result : null;
+        };
+        Library.FoldersDialog = () =>
+        {
+            var window = new FoldersWindow(new FoldersViewModel(_library)) { Owner = System.Windows.Application.Current.MainWindow };
+            window.ShowDialog();
+        };
         Player.BackRequested += async (_, _) => await BackToLibraryAsync();
     }
 
@@ -69,7 +79,12 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>입력 가드가 묻는다: 지금 키를 막아야 하는가. (FR-501)</summary>
     public bool IsPlaying => IsPlayerScreen && Player.IsPlaying;
 
-    public async Task StartAsync() => await Library.RefreshAsync();
+    /// <summary>앱 시작. 목록을 먼저 보여 주고, 등록된 폴더는 뒤에서 읽는다. (FR-104)</summary>
+    public async Task StartAsync()
+    {
+        await Library.RefreshAsync();
+        _ = Library.ScanFoldersAsync();
+    }
 
     /// <summary>파일 경로 → 지문 → 라이브러리 등록/조회 → 플레이어. (FR-101 / FR-103)</summary>
     public async Task OpenPathAsync(string path)
@@ -90,13 +105,22 @@ public sealed partial class ShellViewModel : ObservableObject
 
             if (IsPlayerScreen) await Player.CloseAsync();
             Screen = Screen.Player;
-            await Player.OpenAsync(record);
+            // 영상별 오프셋이 없으면 폴더 기본값을 따른다 (FR-405)
+            var inherited = FolderRules.InheritedOffset(await _library.GetFoldersAsync(), record.Path);
+            await Player.OpenAsync(record, inherited);
 
             if (Player.ErrorMessage is { } error)
             {
                 // 열기에 실패하면 검은 화면에 두지 않고 라이브러리로 돌려보낸다.
                 Screen = Screen.Library;
                 Notice = error;
+
+                // 방금 처음 등록된, 열리지도 않는 파일은 목록에 남기지 않는다. 등록 폴더 안의 파일은
+                // 어차피 스캔이 다시 올리므로 그대로 두고 카드에서 보이게 한다.
+                var inFolder = (await _library.GetFoldersAsync()).Any(f => FolderRules.Contains(f.Path, path));
+                if (record is { LastPlayedAt: null, AvOffsetMs: null } && !inFolder)
+                    await _library.RemoveAsync(record.Id);
+
                 await Library.RefreshAsync();
             }
         }

@@ -59,6 +59,8 @@
         <Setter Property="MinWidth" Value="32" />
         <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -67,7 +69,8 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="5" Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -168,6 +171,44 @@
     <Style TargetType="MenuItem">
         <Setter Property="Foreground" Value="{StaticResource Fg0}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    </Style>
+
+    <!-- ── 입력 ──────────────────────────────────────────────────────────── -->
+    <Style TargetType="TextBox">
+        <Setter Property="Foreground" Value="{StaticResource Fg0}" />
+        <Setter Property="Background" Value="{StaticResource Bg1}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Bg3}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CaretBrush" Value="{StaticResource Fg0}" />
+        <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 태그 · 정렬 칩. 선택 표시는 쓰는 곳에서 DataTrigger 로 BorderBrush 를 바꾼다 -->
+    <Style x:Key="Chip" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Padding" Value="10,3" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="Margin" Value="0,0,6,6" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Background" Value="{StaticResource Bg1}" />
     </Style>
 
     <BooleanToVisibilityConverter x:Key="BoolToVisibility" />

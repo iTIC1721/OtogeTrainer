@@ -483,8 +483,8 @@ internal static class SmokeTest
             await Task.Delay(500);
             Check(!shell.IsFullscreen && window.WindowStyle != WindowStyle.None,
                   "전체화면에서 복귀하면 창 모드로", $"{window.WindowStyle}");
-            var recent = shell.Library.Recent.FirstOrDefault();
-            Check(shell.Library.Recent.Count == 1, "최근 목록 1건", $"{shell.Library.Recent.Count}");
+            var recent = shell.Library.Videos.FirstOrDefault();
+            Check(shell.Library.Videos.Count == 1, "목록 1건", $"{shell.Library.Videos.Count}");
             Check(recent?.BookmarkText == "🔖2", "북마크 2개 표시", recent?.BookmarkText ?? "");
             Check(recent?.OffsetText == "⏱+33 ms", "오프셋 표시", recent?.OffsetText ?? "");
             Check(recent?.SpeedText == "0.5x", "배속 표시", recent?.SpeedText ?? "");
@@ -495,7 +495,7 @@ internal static class SmokeTest
             // ── 7. 복원 ─────────────────────────────────────────────────────
             Emit("");
             Emit("7. 다시 열면 복원 (FR-103 / FR-326 / FR-404)");
-            await shell.Library.OpenRecentCommand.ExecuteAsync(recent);
+            await shell.Library.OpenVideoCommand.ExecuteAsync(recent);
             await WaitUntil(() => player.HasVideo);
             await WaitUntil(() => Math.Abs((engine.Position - leftAt).TotalMilliseconds) < 1);
 
@@ -532,6 +532,114 @@ internal static class SmokeTest
 
             Check(shell.IsLibraryScreen, "라이브러리로 돌아옴 (검은 화면에 두지 않음)");
             Check(!string.IsNullOrEmpty(shell.Notice), "오류 안내 표시", shell.Notice?.Split('\n')[0] ?? "");
+            await shell.Library.RefreshAsync();
+            Check(shell.Library.Videos.All(v => v.Path != junk), "열리지 않는 파일은 목록에 남지 않음",
+                  $"{shell.Library.Videos.Count}건");
+
+            // ── 9-2. 폴더 · 검색 · 태그 · 폴더 오프셋 ─────────────────────────
+            Emit("");
+            Emit("9-2. 폴더 · 검색 · 태그 · 폴더별 기본 오프셋 (FR-104 / 106 / 107 / 405)");
+            shell.Notice = null;
+            var assetDir = Path.GetDirectoryName(clip)!;
+            var assetCount = Directory.EnumerateFiles(assetDir).Count(Core.Library.VideoFiles.IsVideo);
+            var folderLib = new SqliteVideoLibrary(new LibraryDatabase(paths.DatabasePath));
+            var foldersVm = new Library.FoldersViewModel(folderLib);
+            await foldersVm.LoadAsync();
+            await foldersVm.AddPathAsync(assetDir);
+            await shell.Library.ScanFoldersAsync();
+
+            Check(shell.Library.Videos.Count == assetCount && shell.Library.FolderCount == 1,
+                  "폴더 등록 → 스캔으로 영상이 모두 올라옴", $"{shell.Library.Videos.Count}/{assetCount}");
+            Check(shell.Library.Videos[0].Path == clip, "기본 정렬: 재생한 영상이 먼저",
+                  Path.GetFileName(shell.Library.Videos[0].Path));
+            await shell.Library.ScanFoldersAsync();
+            Check(shell.Library.Videos.Count == assetCount && shell.Library.ScanStatus is null,
+                  "다시 스캔해도 중복 없음", shell.Library.ScanStatus ?? "");
+
+            shell.Library.SearchText = "avsync";
+            await WaitUntil(() => shell.Library.Videos.Count == 1);
+            Check(shell.Library.Videos.Count == 1 && shell.Library.Videos[0].Title.Contains("avsync"),
+                  "검색 'avsync' → 1건", $"{shell.Library.Videos.Count}");
+
+            await shell.Library.SetTagsAsync(shell.Library.Videos[0], ["싱크확인", " #연습중 "]);
+            shell.Library.ClearFiltersCommand.Execute(null);
+            await WaitUntil(() => shell.Library.Videos.Count == assetCount);
+            Check(shell.Library.Tags.Select(t => t.Name).SequenceEqual(["싱크확인", "연습중"]),
+                  "태그 저장 · 칩 표시", string.Join(",", shell.Library.Tags.Select(t => t.Text)));
+
+            shell.Library.SearchText = "연습";
+            await WaitUntil(() => shell.Library.Videos.Count == 1);
+            Check(shell.Library.Videos.Count == 1, "태그 이름으로도 검색됨", $"{shell.Library.Videos.Count}");
+            shell.Library.ClearFiltersCommand.Execute(null);
+            await WaitUntil(() => shell.Library.Videos.Count == assetCount);
+
+            shell.Library.ToggleTagCommand.Execute(shell.Library.Tags[0]);
+            await WaitUntil(() => shell.Library.Videos.Count == 1);
+            Check(shell.Library.Videos.Count == 1 && shell.Library.SelectedTag == "싱크확인" && shell.Library.Tags[0].IsSelected,
+                  "태그 칩으로 거르기", $"{shell.Library.Videos.Count}");
+            shell.Library.ToggleTagCommand.Execute(shell.Library.Tags[0]);
+            await WaitUntil(() => shell.Library.Videos.Count == assetCount);
+            Check(shell.Library.SelectedTag is null, "같은 칩을 다시 누르면 해제");
+
+            shell.Library.Sort = Core.Library.VideoSort.Title;
+            await WaitUntil(() => shell.Library.Videos[0].Title.StartsWith("avsync"));
+            Check(shell.Library.Videos[0].Title.StartsWith("avsync") && shell.Library.Sorts[2].IsSelected,
+                  "제목 순 정렬", shell.Library.Videos[0].Title);
+
+            await foldersVm.SetOffsetAsync(foldersVm.Folders[0], 50);
+            await shell.Library.RefreshAsync();
+            var thirty = shell.Library.Videos.First(v => v.Title.StartsWith("frametest_30"));
+            var sixty = shell.Library.Videos.First(v => v.Path == clip);
+            Check(thirty.OffsetText == "⏱+50 ms (폴더)" && sixty.OffsetText == "⏱+33 ms",
+                  "카드: 폴더값 / 영상별 값 구분", $"{thirty.OffsetText} · {sixty.OffsetText}");
+            await Task.Delay(300);
+            Capture(window, "m2-library.png");
+
+            // 대화상자는 모달로 띄우면 검증이 멈추므로 Show 로 띄워 찍기만 한다
+            var foldersWindow = new Library.FoldersWindow(new Library.FoldersViewModel(folderLib)) { Owner = window };
+            foldersWindow.Show();
+            await WaitUntil(() => foldersWindow.ViewModel.Folders.Count == 1);
+            await Task.Delay(300);
+            Check(foldersWindow.ViewModel.Folders[0].OffsetText == "+50 ms", "폴더 창: 기본 오프셋 표시",
+                  foldersWindow.ViewModel.Folders[0].OffsetText);
+            Capture(foldersWindow, "m2-folders.png");
+            foldersWindow.Close();
+
+            var tagged = shell.Library.Videos.First(v => v.TagList.Count > 0);
+            var tagWindow = new Library.TagEditorWindow(tagged.Title, tagged.TagList, ["iidx", "싱크확인", "연습중"]) { Owner = window };
+            tagWindow.Show();
+            await Task.Delay(300);
+            Capture(tagWindow, "m2-tags.png");
+            tagWindow.Close();
+
+            await shell.Library.OpenVideoCommand.ExecuteAsync(thirty);
+            await WaitUntil(() => player.HasVideo);
+            Check(engine.AudioDelayMs == 50 && player.OffsetSourceText == "폴더 기본값" && !player.CanFollowFolderOffset,
+                  "조정 안 한 영상은 폴더 기본값 +50", $"{engine.AudioDelayMs} {player.OffsetSourceText}");
+            player.AdjustOffset(-5);
+            Check(engine.AudioDelayMs == 45 && player.OffsetSourceText == "" && player.CanFollowFolderOffset,
+                  "조정하면 영상별 값이 됨", $"{engine.AudioDelayMs}");
+            await Task.Delay(300);
+            Capture(window, "m2-player-offset.png");
+            player.FollowFolderOffset();
+            Check(engine.AudioDelayMs == 50 && player.OffsetSourceText == "폴더 기본값",
+                  "폴더값으로 되돌리기", $"{engine.AudioDelayMs}");
+            await shell.BackToLibraryAsync();
+
+            await shell.Library.OpenVideoCommand.ExecuteAsync(shell.Library.Videos.First(v => v.Path == clip));
+            await WaitUntil(() => player.HasVideo);
+            Check(engine.AudioDelayMs == 33, "영상별 값(+33)이 폴더 기본값보다 우선", $"{engine.AudioDelayMs}");
+            await shell.BackToLibraryAsync();
+
+            await Task.Delay(200);   // 되돌리기 저장은 비동기
+            var thirtyRecord = (await folderLib.QueryAsync(new Core.Library.VideoQuery("frametest_30")))[0].Video;
+            Check(thirtyRecord.AvOffsetMs is null, "되돌린 영상은 DB 에도 영상별 값 없음", $"{thirtyRecord.AvOffsetMs}");
+
+            await foldersVm.RemoveAsync(foldersVm.Folders[0]);
+            await shell.Library.RefreshAsync();
+            // 재생한 두 편(60 · 30)과 태그 붙은 avsync 는 남고, 손대지 않은 59.94 만 빠진다
+            Check(shell.Library.Videos.Count == assetCount - 1 && shell.Library.FolderCount == 0,
+                  "폴더 해제 → 손대지 않은 영상만 빠짐", $"{shell.Library.Videos.Count}/{assetCount}");
 
             // ── 10. 창 닫기 ─────────────────────────────────────────────────
             // 라이브러리 화면에서 닫으면 저장할 것이 없어 종료 저장이 동기로 끝난다. 그 경로에서

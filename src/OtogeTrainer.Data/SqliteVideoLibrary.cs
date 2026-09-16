@@ -73,22 +73,56 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         return await QuerySingleAsync(conn, null, "WHERE id = $id", ct, ("$id", videoId));
     }
 
-    public async Task<IReadOnlyList<RecentVideo>> GetRecentAsync(int limit, CancellationToken ct = default)
+    public Task<IReadOnlyList<LibraryItem>> GetRecentAsync(int limit, CancellationToken ct = default)
+        => QueryItemsAsync(
+            "WHERE last_played_at IS NOT NULL", "ORDER BY last_played_at DESC, id DESC", limit, [], ct);
+
+    public Task<IReadOnlyList<LibraryItem>> QueryAsync(VideoQuery query, CancellationToken ct = default)
+    {
+        var conditions = new List<string>();
+        var args = new List<(string Name, object Value)>();
+
+        // 공백으로 나눈 낱말이 모두 제목이나 태그 어딘가에 있어야 한다. "iidx 트릴" → 둘 다 포함
+        var words = (query.Text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < words.Length; i++)
+        {
+            conditions.Add(
+                $"(title LIKE $w{i} ESCAPE '\\' OR EXISTS (SELECT 1 FROM video_tags vt JOIN tags t ON t.id = vt.tag_id " +
+                $"WHERE vt.video_id = videos.id AND t.name LIKE $w{i} ESCAPE '\\'))");
+            args.Add(($"$w{i}", "%" + EscapeLike(words[i]) + "%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Tag))
+        {
+            conditions.Add(
+                "EXISTS (SELECT 1 FROM video_tags vt JOIN tags t ON t.id = vt.tag_id " +
+                "WHERE vt.video_id = videos.id AND t.name = $tag)");
+            args.Add(("$tag", query.Tag.Trim()));
+        }
+
+        var where = conditions.Count == 0 ? "" : "WHERE " + string.Join(" AND ", conditions);
+        var order = query.Sort switch
+        {
+            VideoSort.Title => "ORDER BY title COLLATE NOCASE, id",
+            VideoSort.RecentlyAdded => "ORDER BY added_at DESC, id DESC",
+            VideoSort.MostPlayed => "ORDER BY play_count DESC, last_played_at DESC, id DESC",
+            _ => "ORDER BY last_played_at IS NULL, last_played_at DESC, added_at DESC, id DESC",
+        };
+
+        return QueryItemsAsync(where, order, Math.Max(1, query.Limit), args, ct);
+    }
+
+    public async Task<IReadOnlyDictionary<string, long>> GetKnownFileSizesAsync(CancellationToken ct = default)
     {
         await using var conn = await db.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText =
-            $"SELECT {VideoColumns}, " +
-            "  (SELECT COUNT(*) FROM bookmarks b WHERE b.video_id = videos.id AND b.slot IS NOT NULL) " +
-            "FROM videos WHERE last_played_at IS NOT NULL " +
-            "ORDER BY last_played_at DESC, id DESC LIMIT $limit;";
-        cmd.Parameters.AddWithValue("$limit", limit);
+        cmd.CommandText = "SELECT path, file_size FROM videos;";
 
-        var list = new List<RecentVideo>();
+        var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            list.Add(new RecentVideo(ReadVideo(reader), reader.GetInt32(13)));
-        return list;
+            map[reader.GetString(0)] = reader.GetInt64(1);
+        return map;
     }
 
     public Task MarkPlayedAsync(long videoId, DateTimeOffset at, CancellationToken ct = default)
@@ -106,10 +140,10 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
             "UPDATE videos SET last_position_ms = $pos, last_speed = $speed WHERE id = $id;", ct,
             ("$pos", Math.Max(0, positionMs)), ("$speed", SpeedRules.Normalize(speed)), ("$id", videoId));
 
-    public Task SaveOffsetAsync(long videoId, int offsetMs, CancellationToken ct = default)
+    public Task SaveOffsetAsync(long videoId, int? offsetMs, CancellationToken ct = default)
         => ExecuteAsync(
             "UPDATE videos SET av_offset_ms = $ms WHERE id = $id;", ct,
-            ("$ms", OffsetRules.Clamp(offsetMs)), ("$id", videoId));
+            ("$ms", offsetMs is { } ms ? OffsetRules.Clamp(ms) : DBNull.Value), ("$id", videoId));
 
     public async Task<IReadOnlyList<Bookmark>> GetBookmarksAsync(long videoId, CancellationToken ct = default)
     {
@@ -149,6 +183,156 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
     public Task RemoveAsync(long videoId, CancellationToken ct = default)
         => ExecuteAsync("DELETE FROM videos WHERE id = $id;", ct, ("$id", videoId));
 
+    // ── 폴더 ─────────────────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<LibraryFolder>> GetFoldersAsync(CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        return await ReadFoldersAsync(conn, null, "", ct);
+    }
+
+    public async Task<LibraryFolder> AddFolderAsync(string path, CancellationToken ct = default)
+    {
+        var normalized = FolderRules.Normalize(path);
+
+        await using var conn = await db.OpenAsync(ct);
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText =
+                "INSERT INTO folders (path, added_at) VALUES ($path, $now) ON CONFLICT (path) DO NOTHING;";
+            cmd.Parameters.AddWithValue("$path", normalized);
+            cmd.Parameters.AddWithValue("$now", Now());
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var found = await ReadFoldersAsync(conn, null, "WHERE path = $path", ct, ("$path", normalized));
+        return found[0];
+    }
+
+    public async Task<int> RemoveFolderAsync(long folderId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+
+        var all = await ReadFoldersAsync(conn, tx, "", ct);
+        var target = all.FirstOrDefault(f => f.Id == folderId);
+        if (target is null) return 0;
+        var others = all.Where(f => f.Id != folderId).ToList();
+
+        // 사용자가 손댄 흔적이 없는 영상만 후보. 재생 · 북마크 · 태그 · 오프셋 중 하나라도 있으면 남긴다
+        var candidates = new List<(long Id, string Path)>();
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText =
+                "SELECT id, path FROM videos v " +
+                "WHERE last_played_at IS NULL AND av_offset_ms IS NULL " +
+                "  AND NOT EXISTS (SELECT 1 FROM bookmarks b WHERE b.video_id = v.id) " +
+                "  AND NOT EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id = v.id);";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                candidates.Add((reader.GetInt64(0), reader.GetString(1)));
+        }
+
+        // 경로 포함 판정은 SQL LIKE 대신 FolderRules 로 — 경계(D:\rec 와 D:\recording)와 대소문자를 한 곳에서 다룬다
+        var removed = 0;
+        foreach (var (id, videoPath) in candidates)
+        {
+            if (!FolderRules.Contains(target.Path, videoPath)) continue;
+            if (others.Any(f => FolderRules.Contains(f.Path, videoPath))) continue;
+
+            await using var del = conn.CreateCommand();
+            del.Transaction = tx;
+            del.CommandText = "DELETE FROM videos WHERE id = $id;";
+            del.Parameters.AddWithValue("$id", id);
+            removed += await del.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM folders WHERE id = $id;";
+            cmd.Parameters.AddWithValue("$id", folderId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return removed;
+    }
+
+    public Task SetFolderDefaultOffsetAsync(long folderId, int? offsetMs, CancellationToken ct = default)
+        => ExecuteAsync(
+            "UPDATE folders SET default_av_offset_ms = $ms WHERE id = $id;", ct,
+            ("$ms", offsetMs is { } ms ? OffsetRules.Clamp(ms) : DBNull.Value), ("$id", folderId));
+
+    public Task MarkFolderScannedAsync(long folderId, DateTimeOffset at, CancellationToken ct = default)
+        => ExecuteAsync(
+            "UPDATE folders SET last_scan_at = $at WHERE id = $id;", ct,
+            ("$at", at.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)), ("$id", folderId));
+
+    // ── 태그 ─────────────────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<TagCount>> GetTagsAsync(CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "SELECT t.name, COUNT(*) FROM tags t JOIN video_tags vt ON vt.tag_id = t.id " +
+            "GROUP BY t.id ORDER BY t.name COLLATE NOCASE;";
+
+        var list = new List<TagCount>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new TagCount(reader.GetString(0), reader.GetInt32(1)));
+        return list;
+    }
+
+    public async Task<IReadOnlyList<string>> GetVideoTagsAsync(long videoId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "SELECT t.name FROM tags t JOIN video_tags vt ON vt.tag_id = t.id " +
+            "WHERE vt.video_id = $id ORDER BY t.name COLLATE NOCASE;";
+        cmd.Parameters.AddWithValue("$id", videoId);
+
+        var list = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) list.Add(reader.GetString(0));
+        return list;
+    }
+
+    public async Task SetVideoTagsAsync(long videoId, IEnumerable<string> tags, CancellationToken ct = default)
+    {
+        var normalized = TagRules.Normalize(tags);
+
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+
+        async Task Run(string sql, params (string Name, object Value)[] args)
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = sql;
+            foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await Run("DELETE FROM video_tags WHERE video_id = $id;", ("$id", videoId));
+
+        foreach (var tag in normalized)
+        {
+            // 이미 있는 태그면 처음 만든 표기를 쓴다 ("IIDX" 가 있으면 "iidx" 입력도 거기에 붙는다)
+            await Run("INSERT INTO tags (name) VALUES ($name) ON CONFLICT (name) DO NOTHING;", ("$name", tag));
+            await Run(
+                "INSERT OR IGNORE INTO video_tags (video_id, tag_id) SELECT $id, id FROM tags WHERE name = $name;",
+                ("$id", videoId), ("$name", tag));
+        }
+
+        await Run("DELETE FROM tags WHERE NOT EXISTS (SELECT 1 FROM video_tags vt WHERE vt.tag_id = tags.id);");
+        await tx.CommitAsync(ct);
+    }
+
     // ── 보조 ─────────────────────────────────────────────────────────────────
 
     private string Now() => _clock.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
@@ -162,6 +346,62 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         cmd.CommandText = sql;
         foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<LibraryItem>> QueryItemsAsync(
+        string where, string order, int limit, IEnumerable<(string Name, object Value)> args, CancellationToken ct)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"SELECT {VideoColumns}, " +
+            "  (SELECT COUNT(*) FROM bookmarks b WHERE b.video_id = videos.id AND b.slot IS NOT NULL), " +
+            "  (SELECT group_concat(t.name, char(31)) FROM video_tags vt JOIN tags t ON t.id = vt.tag_id " +
+            "   WHERE vt.video_id = videos.id) " +
+            $"FROM videos {where} {order} LIMIT $limit;";
+        cmd.Parameters.AddWithValue("$limit", limit);
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
+
+        var list = new List<LibraryItem>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            string[] tags = reader.IsDBNull(14)
+                ? []
+                : reader.GetString(14).Split(TagSeparator).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            list.Add(new LibraryItem(ReadVideo(reader), reader.GetInt32(13), tags));
+        }
+        return list;
+    }
+
+    private const char TagSeparator = '';
+
+    private static string EscapeLike(string text)
+        => text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    private static async Task<IReadOnlyList<LibraryFolder>> ReadFoldersAsync(
+        SqliteConnection conn, SqliteTransaction? tx, string where, CancellationToken ct,
+        params (string Name, object Value)[] args)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            $"SELECT id, path, default_av_offset_ms, added_at, last_scan_at FROM folders {where} " +
+            "ORDER BY path COLLATE NOCASE;";
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
+
+        var list = new List<LibraryFolder>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new LibraryFolder(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                ParseTime(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : ParseTime(reader.GetString(4))));
+        }
+        return list;
     }
 
     private static async Task<VideoRecord?> QuerySingleAsync(

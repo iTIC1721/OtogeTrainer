@@ -21,14 +21,11 @@ public sealed record VideoRecord
     public long LastPositionMs { get; init; }
 
     /// <summary>
-    /// 영상별 오프셋. null 이면 상위(폴더/전역) 기본값을 상속한다(FR-405).
-    /// M1 에는 상속이 없으므로 <see cref="EffectiveOffsetMs"/> 는 null 을 0 으로 본다.
+    /// 영상별 오프셋. null 이면 폴더 기본값을 상속한다(FR-405, <see cref="FolderRules.InheritedOffset"/>).
     /// </summary>
     public int? AvOffsetMs { get; init; }
 
     public double? LastSpeed { get; init; }
-
-    public int EffectiveOffsetMs => AvOffsetMs ?? 0;
 
     /// <summary>진행률 0~1. 길이를 모르면 0.</summary>
     public double Progress => DurationMs is > 0 ? Math.Clamp((double)LastPositionMs / DurationMs.Value, 0, 1) : 0;
@@ -37,12 +34,34 @@ public sealed record VideoRecord
 /// <summary>북마크 한 칸. (FR-321)</summary>
 public sealed record Bookmark(int Slot, long PositionMs, string? Label = null);
 
-/// <summary>최근 목록 카드에 필요한 것. (FR-102)</summary>
-public sealed record RecentVideo(VideoRecord Video, int BookmarkCount);
+/// <summary>목록 카드에 필요한 것. (FR-102 · FR-106 · FR-107)</summary>
+public sealed record LibraryItem(VideoRecord Video, int BookmarkCount, IReadOnlyList<string> Tags);
+
+/// <summary>등록된 폴더. (FR-104 · FR-405)</summary>
+/// <param name="Path">정규화된 전체 경로. 끝에 구분자가 없다.</param>
+/// <param name="DefaultOffsetMs">이 폴더 아래 영상의 기본 오프셋. null 이면 지정 안 함.</param>
+public sealed record LibraryFolder(
+    long Id, string Path, int? DefaultOffsetMs, DateTimeOffset AddedAt, DateTimeOffset? LastScanAt);
+
+public sealed record TagCount(string Name, int Count);
+
+public enum VideoSort
+{
+    /// <summary>최근 재생 순. 한 번도 재생하지 않은 영상은 뒤에, 최근 추가 순으로.</summary>
+    RecentlyPlayed,
+    Title,
+    RecentlyAdded,
+    MostPlayed,
+}
+
+/// <param name="Text">제목 또는 태그 이름에 포함된 글자. 대소문자 구분 없음.</param>
+/// <param name="Tag">이 태그가 붙은 영상만.</param>
+public sealed record VideoQuery(
+    string? Text = null, string? Tag = null, VideoSort Sort = VideoSort.RecentlyPlayed, int Limit = 500);
 
 /// <summary>
 /// 영상 라이브러리 저장소. 구현은 <c>OtogeTrainer.Data</c>.
-/// <para>북마크와 오프셋은 변경 즉시 커밋한다. 비정상 종료로 잃으면 안 된다. (NFR-08)</para>
+/// <para>북마크 · 오프셋 · 태그는 변경 즉시 커밋한다. 비정상 종료로 잃으면 안 된다. (NFR-08)</para>
 /// </summary>
 public interface IVideoLibrary
 {
@@ -51,8 +70,14 @@ public interface IVideoLibrary
 
     Task<VideoRecord?> GetAsync(long videoId, CancellationToken ct = default);
 
-    /// <summary>최근 재생 순. (FR-102)</summary>
-    Task<IReadOnlyList<RecentVideo>> GetRecentAsync(int limit, CancellationToken ct = default);
+    /// <summary>한 번이라도 재생한 영상만, 최근 재생 순. (FR-102)</summary>
+    Task<IReadOnlyList<LibraryItem>> GetRecentAsync(int limit, CancellationToken ct = default);
+
+    /// <summary>검색 · 태그 필터 · 정렬. 재생하지 않은 영상도 포함한다. (FR-106)</summary>
+    Task<IReadOnlyList<LibraryItem>> QueryAsync(VideoQuery query, CancellationToken ct = default);
+
+    /// <summary>등록된 모든 영상의 경로 → 파일 크기. 스캔에서 이미 아는 파일을 건너뛰는 데 쓴다.</summary>
+    Task<IReadOnlyDictionary<string, long>> GetKnownFileSizesAsync(CancellationToken ct = default);
 
     Task MarkPlayedAsync(long videoId, DateTimeOffset at, CancellationToken ct = default);
 
@@ -60,7 +85,8 @@ public interface IVideoLibrary
 
     Task SavePlaybackStateAsync(long videoId, long positionMs, double speed, CancellationToken ct = default);
 
-    Task SaveOffsetAsync(long videoId, int offsetMs, CancellationToken ct = default);
+    /// <summary>영상별 오프셋. null 이면 영상별 값을 지우고 폴더 기본값을 따른다. (FR-405)</summary>
+    Task SaveOffsetAsync(long videoId, int? offsetMs, CancellationToken ct = default);
 
     Task<IReadOnlyList<Bookmark>> GetBookmarksAsync(long videoId, CancellationToken ct = default);
 
@@ -70,4 +96,32 @@ public interface IVideoLibrary
 
     /// <summary>목록에서만 제거한다. 파일은 건드리지 않는다. (FR-108)</summary>
     Task RemoveAsync(long videoId, CancellationToken ct = default);
+
+    // ── 폴더 (FR-104 · FR-405) ──────────────────────────────────────────────
+
+    Task<IReadOnlyList<LibraryFolder>> GetFoldersAsync(CancellationToken ct = default);
+
+    /// <summary>폴더를 등록한다. 이미 있으면 그것을 돌려준다.</summary>
+    Task<LibraryFolder> AddFolderAsync(string path, CancellationToken ct = default);
+
+    /// <summary>
+    /// 폴더 등록을 해제한다. 파일은 건드리지 않는다.
+    /// 그 폴더에서만 찾은 영상 중 <b>사용자 기록이 전혀 없는 것</b>(재생 · 북마크 · 태그 · 오프셋)만 목록에서 뺀다.
+    /// </summary>
+    /// <returns>목록에서 뺀 영상 수.</returns>
+    Task<int> RemoveFolderAsync(long folderId, CancellationToken ct = default);
+
+    Task SetFolderDefaultOffsetAsync(long folderId, int? offsetMs, CancellationToken ct = default);
+
+    Task MarkFolderScannedAsync(long folderId, DateTimeOffset at, CancellationToken ct = default);
+
+    // ── 태그 (FR-107) ───────────────────────────────────────────────────────
+
+    /// <summary>영상이 하나 이상 붙은 태그만, 이름 순.</summary>
+    Task<IReadOnlyList<TagCount>> GetTagsAsync(CancellationToken ct = default);
+
+    Task<IReadOnlyList<string>> GetVideoTagsAsync(long videoId, CancellationToken ct = default);
+
+    /// <summary>영상의 태그를 통째로 바꾼다. <see cref="TagRules.Normalize"/> 가 적용된다.</summary>
+    Task SetVideoTagsAsync(long videoId, IEnumerable<string> tags, CancellationToken ct = default);
 }

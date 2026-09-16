@@ -34,13 +34,8 @@ public sealed class AppPaths
     public string ThumbnailFor(string fingerprint)
         => Path.Combine(ThumbnailDirectory, fingerprint[(fingerprint.IndexOf(':') + 1)..] + ".jpg");
 
-    /// <summary>재생 가능한 확장자. (FR-101)</summary>
-    public static readonly IReadOnlySet<string> VideoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        ".mp4", ".mkv", ".mov", ".avi", ".webm", ".ts", ".m2ts", ".flv", ".wmv",
-    };
-
-    public static bool IsVideoFile(string path) => VideoExtensions.Contains(Path.GetExtension(path));
+    /// <summary>재생 가능한 파일. (FR-101)</summary>
+    public static bool IsVideoFile(string path) => Core.Library.VideoFiles.IsVideo(path);
 
     public const string OpenFileFilter =
         "영상 파일|*.mp4;*.mkv;*.mov;*.avi;*.webm;*.ts;*.m2ts;*.flv;*.wmv|모든 파일|*.*";
