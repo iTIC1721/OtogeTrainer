@@ -41,6 +41,44 @@ internal static class SmokeTest
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
 
+    // 떠 있는 컨트롤 창의 "활성화되지 않음" 은 PostMessage 로는 확인할 수 없다(WM_MOUSEACTIVATE 가 안 생김).
+    // 실제 마우스 입력으로 누른다.
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(CursorPoint point);
+    [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr hwnd, out int processId);
+
+    /// <summary>
+    /// 실제 마우스로 누른다. <b>그 지점의 창이 이 앱이 아니면 누르지 않고 false</b> —
+    /// 다른 프로그램(게임 등)이 앞에 있을 때 그 프로그램을 클릭하면 안 된다.
+    /// </summary>
+    private static async Task<bool> RealClick(FrameworkElement element, double xRatio = 0.5)
+    {
+        var p = element.PointToScreen(new Point(element.ActualWidth * xRatio, element.ActualHeight / 2));
+        GetWindowThreadProcessId(WindowFromPoint(new CursorPoint { X = (int)p.X, Y = (int)p.Y }), out var owner);
+        if (owner != Environment.ProcessId) return false;
+
+        SetCursorPos((int)p.X, (int)p.Y);
+        await Task.Delay(60);
+        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+        await Task.Delay(40);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+        await Task.Delay(250);
+        return true;
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) yield return match;
+            foreach (var nested in Descendants<T>(child)) yield return nested;
+        }
+    }
+
     public static async Task<int> RunAsync(MainWindow window, ShellViewModel shell, AppPaths paths, string[] args)
     {
         var log = new StringBuilder();
@@ -455,7 +493,48 @@ internal static class SmokeTest
             Check(Keyboard.FocusedElement is Window, "전환 후에도 포커스가 창에 있음",
                   Keyboard.FocusedElement?.GetType().Name ?? "null");
             await Task.Delay(300);
-            Capture(window, "m1-fullscreen.png");
+
+            var floating = window.FloatingControls;
+            var screenHeight = window.ActualHeight;
+            Check(Math.Abs(window.Surface.ActualHeight - screenHeight) < 2 && Math.Abs(window.Surface.ActualWidth - window.ActualWidth) < 2,
+                  "영상이 화면을 꽉 채움",
+                  $"영상 {window.Surface.ActualWidth:0}×{window.Surface.ActualHeight:0} · 창 {window.ActualWidth:0}×{screenHeight:0}");
+            Check(floating is { IsVisible: true } && Window.GetWindow(window.Timeline) == floating,
+                  "일시정지 중: 컨트롤이 떠 있는 바로 보임");
+            if (floating is not null)
+            {
+                var barBottom = floating.Top + floating.ActualHeight;
+                Check(Math.Abs(barBottom - screenHeight) < 2 && floating.ActualHeight < screenHeight / 3,
+                      "바는 화면 아래쪽에 겹쳐 뜸", $"top {floating.Top:0} · 높이 {floating.ActualHeight:0}");
+                Capture(floating, "m2-fullscreen-controls.png");
+
+                // 떠 있는 바의 타임라인을 실제 마우스로 25% 지점 클릭
+                var track = (System.Windows.Controls.Primitives.Track)window.Timeline.Template.FindName("PART_Track", window.Timeline);
+                var thumbHalf = track.Thumb.ActualWidth / 2 / track.ActualWidth;
+                if (!await RealClick(track, thumbHalf + 0.25 * (1 - 2 * thumbHalf)))
+                    Check(false, "다른 창이 앞을 가려 실제 클릭을 건너뜀 — 화면을 비우고 다시 실행");
+                await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 30) < 1);
+                Check(Math.Abs(engine.Position.TotalSeconds - 30) < 1, "떠 있는 바의 타임라인 클릭 → 25% 지점",
+                      Timecode.Format(engine.Position));
+                Check(window.IsActive && Keyboard.FocusedElement == window && !floating.IsActive,
+                      "바를 눌러도 주 창이 활성 · 포커스 유지",
+                      $"주 창 활성 {window.IsActive} · 포커스 {Keyboard.FocusedElement?.GetType().Name}");
+
+                var playButton = Descendants<System.Windows.Controls.Button>(floating)
+                    .First(b => ReferenceEquals(b.Command, player.TogglePlayCommand));
+                if (!await RealClick(playButton))
+                    Check(false, "다른 창이 앞을 가려 실제 클릭을 건너뜀 — 화면을 비우고 다시 실행");
+                await WaitUntil(() => player.IsPlaying);
+                await Task.Delay(200);
+                Check(player.IsPlaying && !floating.IsVisible, "바의 재생 버튼 → 재생, 바가 사라짐",
+                      $"재생 {player.IsPlaying} · 바 {floating.IsVisible}");
+                Check(window.IsActive && Keyboard.FocusedElement == window, "재생 후에도 주 창이 키를 받음",
+                      Keyboard.FocusedElement?.GetType().Name ?? "null");
+
+                await Press(Key.Escape);
+                await WaitUntil(() => !player.IsPlaying && floating.IsVisible);
+                Check(!player.IsPlaying && floating.IsVisible, "ESC → 일시정지, 바가 다시 뜸");
+            }
 
             player.TogglePlay();
             await WaitUntil(() => player.IsPlaying);
@@ -465,12 +544,18 @@ internal static class SmokeTest
                   "재생 중 F11 → 창 모드로, 재생은 계속", $"{window.WindowStyle} · 재생 {player.IsPlaying}");
             Check(Math.Abs(window.ActualWidth - windowedWidth) < 2,
                   "창 크기가 원래대로", $"{windowedWidth:0} → {window.ActualWidth:0}");
+            Check(Window.GetWindow(window.Timeline) == window && window.Timeline.IsVisible
+                  && window.FloatingControls is { IsVisible: false },
+                  "창 모드: 컨트롤이 영상 아래로 돌아옴");
             await Press(Key.F11);
             await Task.Delay(700);
-            Check(shell.IsFullscreen && player.IsPlaying, "재생 중 F11 → 다시 전체화면");
+            Check(shell.IsFullscreen && player.IsPlaying && window.FloatingControls is { IsVisible: false },
+                  "재생 중 F11 → 다시 전체화면 (재생 중이라 바는 안 뜸)");
             await Press(Key.Escape);
             await WaitUntil(() => !player.IsPlaying);
             Check(shell.IsFullscreen && !player.IsPlaying, "ESC 는 일시정지만 (전체화면 유지, D-3)");
+            await WaitUntil(() => window.FloatingControls is { IsVisible: true });
+            Check(window.FloatingControls is { IsVisible: true }, "일시정지하면 바가 뜸");
             await SeekAndSettle(32.5);
 
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────

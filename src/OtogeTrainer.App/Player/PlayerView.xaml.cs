@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using OtogeTrainer.Core.Playback;
 using OtogeTrainer.Playback;
 
@@ -34,6 +35,54 @@ public partial class PlayerView : UserControl
     public void AttachSurface(VideoSurfaceHost surface) => VideoFrame.Child = surface;
 
     internal Slider TimelineSlider => Timeline;
+
+    // ── 전체화면 떠 있는 컨트롤 ──────────────────────────────────────────────
+
+    private Brush? _dockedBackground;
+
+    /// <summary>
+    /// 컨트롤 영역을 이 화면에서 떼어 낸다. 전체화면에서 영상 위에 띄우기 위해서다.
+    /// 요소 자체를 옮기므로 바인딩 · 타임라인 처리기 · 북마크 메뉴가 그대로 따라간다.
+    /// </summary>
+    public Border DetachControls()
+    {
+        if (ControlsPanel.Parent is Panel parent) parent.Children.Remove(ControlsPanel);
+        _dockedBackground ??= ControlsPanel.Background;
+        ControlsPanel.Background = FloatingBackground;
+        ControlsPanel.CornerRadius = new CornerRadius(10);
+        ControlsPanel.BorderBrush = FloatingBorder;
+        ControlsPanel.BorderThickness = new Thickness(1);
+        return ControlsPanel;
+    }
+
+    /// <summary>떼어 냈던 컨트롤 영역을 원래 자리(하단)로 되돌린다.</summary>
+    public void AttachControls()
+    {
+        if (ControlsPanel.Parent == LayoutRoot) return;
+        switch (ControlsPanel.Parent)
+        {
+            case Panel panel: panel.Children.Remove(ControlsPanel); break;
+            case ContentControl host: host.Content = null; break;
+            case Decorator decorator: decorator.Child = null; break;
+        }
+
+        ControlsPanel.Background = _dockedBackground;
+        ControlsPanel.CornerRadius = default;
+        ControlsPanel.BorderThickness = default;
+        Grid.SetRow(ControlsPanel, 2);
+        LayoutRoot.Children.Add(ControlsPanel);
+    }
+
+    internal Border Controls => ControlsPanel;
+
+    private static readonly Brush FloatingBackground = Frozen(new SolidColorBrush(Color.FromArgb(0xD0, 0x16, 0x18, 0x1D)));
+    private static readonly Brush FloatingBorder = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
+
+    private static Brush Frozen(Brush brush)
+    {
+        brush.Freeze();
+        return brush;
+    }
 
     // ── 타임라인 (FR-202) ────────────────────────────────────────────────────
     //

@@ -38,7 +38,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid>
+    <Grid x:Name="LayoutRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -91,17 +91,21 @@
         </DockPanel>
 
         <!-- ── 영상. 재생 중에는 테두리가 앰버로 바뀐다 (UI-BLUEPRINT §5) ──── -->
-        <Border Grid.Row="1" x:Name="VideoFrame" Background="Black" BorderThickness="2">
+        <Border Grid.Row="1" x:Name="VideoFrame" Background="Black">
             <Border.Style>
                 <Style TargetType="Border">
+                    <!-- 두께를 요소 속성으로 두면 트리거가 덮어쓰지 못한다 (로컬 값이 우선) -->
+                    <Setter Property="BorderThickness" Value="2" />
                     <Setter Property="BorderBrush" Value="{StaticResource Bg1}" />
                     <Setter Property="Margin" Value="12,0" />
                     <Style.Triggers>
-                        <DataTrigger Binding="{Binding DataContext.IsFullscreen, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                            <Setter Property="Margin" Value="0" />
-                        </DataTrigger>
                         <DataTrigger Binding="{Binding IsPlaying}" Value="True">
                             <Setter Property="BorderBrush" Value="#99FFB454" />
+                        </DataTrigger>
+                        <!-- 전체화면: 영상이 화면을 꽉 채운다. 컨트롤은 떠 있는 창으로 옮겨진다 (MainWindow) -->
+                        <DataTrigger Binding="{Binding DataContext.IsFullscreen, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="BorderThickness" Value="0" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
@@ -109,7 +113,7 @@
         </Border>
 
         <!-- ── 컨트롤 영역 ─────────────────────────────────────────────────── -->
-        <Border Grid.Row="2" Background="{StaticResource Bg1}" Padding="16,10,16,12">
+        <Border x:Name="ControlsPanel" Grid.Row="2" Background="{StaticResource Bg1}" Padding="16,10,16,12">
             <StackPanel>
                 <!-- 타임라인 (FR-202 / FR-307) -->
                 <DockPanel Margin="0,0,0,8">
