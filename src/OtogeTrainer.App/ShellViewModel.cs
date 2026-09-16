@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using OtogeTrainer.App.Library;
 using OtogeTrainer.App.Player;
+using OtogeTrainer.App.Settings;
 using OtogeTrainer.Core.Library;
 using OtogeTrainer.Input;
 
@@ -16,12 +17,27 @@ public enum Screen { Library, Player }
 public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly IVideoLibrary _library;
+    private readonly SettingsStore _settings;
 
-    public ShellViewModel(LibraryViewModel library, PlayerViewModel player, IVideoLibrary videoLibrary)
+    public ShellViewModel(
+        LibraryViewModel library, PlayerViewModel player, IVideoLibrary videoLibrary,
+        PlaybackKeyMap keyMap, SettingsStore settings)
     {
         Library = library;
         Player = player;
         _library = videoLibrary;
+        KeyMap = keyMap;
+        _settings = settings;
+
+        // 설정 창에서 키를 바꾸면 즉시 저장한다.
+        KeyMap.Changed += (_, _) =>
+        {
+            try { _settings.Save(KeyMap); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Notice = $"설정을 저장하지 못했습니다: {ex.Message}";
+            }
+        };
 
         Library.OpenPath = OpenPathAsync;
         Library.Notify = message => Notice = message;
@@ -30,6 +46,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public LibraryViewModel Library { get; }
     public PlayerViewModel Player { get; }
+
+    /// <summary>재생 중 동작 키 배치. 입력 가드 · 플레이어 · 설정 창이 같은 객체를 본다. (D-8)</summary>
+    public PlaybackKeyMap KeyMap { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLibraryScreen), nameof(IsPlayerScreen))]
@@ -99,6 +118,19 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [RelayCommand]
     private void DismissNotice() => Notice = null;
+
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        var window = new SettingsWindow(new SettingsViewModel(KeyMap)) { Owner = System.Windows.Application.Current.MainWindow };
+        window.ShowDialog();
+    }
+
+    /// <summary>재생 중 동작 키. 플레이어 화면에서만 의미가 있다.</summary>
+    public void HandlePlaybackAction(PlaybackAction action, bool isRepeat)
+    {
+        if (IsPlayerScreen) Player.ExecuteAction(action, isRepeat);
+    }
 
     /// <summary>입력 가드에서 온 키. 일시정지 상태에서만 도달한다.</summary>
     public bool HandleShortcut(KeyEventContext ctx)

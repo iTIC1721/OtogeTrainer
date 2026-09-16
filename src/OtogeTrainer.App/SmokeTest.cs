@@ -22,9 +22,14 @@ namespace OtogeTrainer.App;
 /// </summary>
 internal static class SmokeTest
 {
+    private const int WM_MOUSEMOVE = 0x0200;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONUP = 0x0202;
+    private const int WM_RBUTTONDOWN = 0x0204;
+    private const int WM_RBUTTONUP = 0x0205;
+    private const int WM_MBUTTONDOWN = 0x0207;
     private const int WM_MOUSEWHEEL = 0x020A;
+    private const int WM_XBUTTONDOWN = 0x020B;
     private const int WM_XBUTTONUP = 0x020C;
 
     [DllImport("user32.dll")]
@@ -178,36 +183,177 @@ internal static class SmokeTest
             await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001);
             Check(Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001, "일시정지 중 3 → 슬롯 3 으로 이동", Timecode.Format(engine.Position));
 
-            // ── 5. 영상 위 마우스 ───────────────────────────────────────────
+            // ── 5. 영상 위 마우스 — 아무 동작도 하지 않는다 (D-8) ──────────
+            // 마우스를 쓰는 리듬게임을 따라 치다가 영상을 건드려도 재생이 흔들리면 안 된다.
+            // "아무 일도 없었다" 가 메시지 유실 때문이 아님을 보이려고, 표면이 누름을 실제로
+            // 받았는지(PointerPressed)도 함께 센다.
             Emit("");
-            Emit("5. 영상 위 마우스 (SPEC §6.6)");
+            Emit("5. 영상 위 마우스는 아무 동작도 하지 않음 (D-8)");
             var surface = window.Surface.SurfaceHandle;
             var diag = window.Surface.Diagnose();
             Check(diag.EngineWindows.Count > 0 && diag.EngineWindows.All(w => !w.Enabled), "엔진 창 비활성화됨",
                   $"{diag.EngineWindows.Count}개");
             Check(diag.PointerReachesSurface, "영상 중앙 입력이 표면으로 옴");
 
-            PostMessage(surface, WM_LBUTTONDOWN, IntPtr.Zero, (IntPtr)((50 << 16) | 50));
-            PostMessage(surface, WM_LBUTTONUP, IntPtr.Zero, (IntPtr)((50 << 16) | 50));
-            await WaitUntil(() => player.IsPlaying);
-            Check(player.IsPlaying, "영상 클릭 → 재생");
+            var presses = 0;
+            window.Surface.PointerPressed += (_, _) => presses++;
+            var center = (IntPtr)((50 << 16) | 50);
 
-            // 가장 중요한 회귀 검사: 영상을 클릭한 뒤에도 ESC 가 먹어야 한다.
+            async Task Post(int msg, IntPtr wParam, IntPtr lParam)
+            {
+                PostMessage(surface, msg, wParam, lParam);
+                await Task.Delay(60);
+            }
+
+            // 일시정지 중 — 클릭 · 휠 · 사이드 버튼 · 우클릭 드래그 · 가운데 클릭
+            await SeekAndSettle(40.0);
+            var frameBefore = engine.FrameNumber;
+            await Post(WM_LBUTTONDOWN, IntPtr.Zero, center);
+            await Post(WM_LBUTTONUP, IntPtr.Zero, center);
+            await Post(WM_MOUSEWHEEL, (IntPtr)(-120 << 16), center);
+            await Post(WM_MOUSEWHEEL, (IntPtr)(120 << 16), center);
+            await Post(WM_XBUTTONDOWN, (IntPtr)(1 << 16), center);
+            await Post(WM_XBUTTONUP, (IntPtr)(1 << 16), center);
+            await Post(WM_RBUTTONDOWN, IntPtr.Zero, center);
+            await Post(WM_MOUSEMOVE, IntPtr.Zero, (IntPtr)((50 << 16) | 250));
+            await Post(WM_RBUTTONUP, IntPtr.Zero, (IntPtr)((50 << 16) | 250));
+            await Post(WM_MBUTTONDOWN, IntPtr.Zero, center);
+            await Task.Delay(400);
+
+            Check(presses >= 4, "표면이 마우스 누름을 실제로 받음 (대조)", $"{presses}회");
+            Check(!player.IsPlaying, "클릭해도 재생되지 않음");
+            Check(Math.Abs(engine.Position.TotalSeconds - 40.0) < 0.001 && engine.FrameNumber == frameBefore,
+                  "휠 · 사이드 버튼 · 우클릭 드래그로 위치가 바뀌지 않음", $"{Timecode.Format(engine.Position)} f#{engine.FrameNumber}");
+
+            // 재생 중 — 클릭해도 멈추지 않고, 클릭 뒤에도 ESC 가 먹어야 한다
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Post(WM_LBUTTONDOWN, IntPtr.Zero, center);
+            await Post(WM_LBUTTONUP, IntPtr.Zero, center);
+            await Task.Delay(300);
+            Check(player.IsPlaying, "재생 중 클릭해도 멈추지 않음");
             Check(Keyboard.FocusedElement is Window, "클릭 후에도 키보드 포커스가 창에 있음",
                   Keyboard.FocusedElement?.GetType().Name ?? "null");
             await Press(Key.Escape);
             await WaitUntil(() => !player.IsPlaying);
             Check(!player.IsPlaying, "클릭 후 ESC 로 일시정지");
 
-            await SeekAndSettle(40.0);
-            PostMessage(surface, WM_XBUTTONUP, (IntPtr)(1 << 16), IntPtr.Zero);        // X1 = 이전 북마크
-            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001);
-            Check(Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001, "사이드 버튼 X1 → 이전 북마크(30s)", Timecode.Format(engine.Position));
+            // ── 5-2. 재생 중 동작 키 (기본 F1 ~ F7) ─────────────────────────
+            Emit("");
+            Emit("5-2. 재생 중 동작 키 (D-8)");
 
-            var beforeWheel = engine.Position.TotalSeconds;
-            PostMessage(surface, WM_MOUSEWHEEL, (IntPtr)(-120 << 16), IntPtr.Zero);   // 휠 아래 = 앞으로
-            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - (beforeWheel + 2.5)) < 0.001);
-            Check(Math.Abs(engine.Position.TotalSeconds - (beforeWheel + 2.5)) < 0.001, "휠 아래 → +2.5s", Timecode.Format(engine.Position));
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Press(Key.F5);
+            await WaitUntil(() => !player.IsPlaying);
+            Check(!player.IsPlaying, "재생 중 F5 → 일시정지");
+            await Press(Key.F5);
+            await WaitUntil(() => player.IsPlaying);
+            Check(player.IsPlaying, "일시정지 중 F5 → 재생");
+
+            var playingAt = engine.Position.TotalSeconds;
+            await Press(Key.F1);
+            await WaitUntil(() => engine.Position.TotalSeconds < playingAt - 1.5, 2000);
+            Check(engine.Position.TotalSeconds < playingAt - 1.5 && player.IsPlaying,
+                  "재생 중 F1 → 뒤로 점프하고 계속 재생", $"{playingAt:0.00}s → {engine.Position.TotalSeconds:0.00}s");
+
+            var playingFrame = engine.FrameNumber ?? 0;
+            await Press(Key.F2);
+            await WaitUntil(() => !player.IsPlaying, 2000);
+            await Task.Delay(400);
+            Check(!player.IsPlaying && engine.FrameNumber < playingFrame + 30,
+                  "재생 중 F2 → 프레임 뒤로 (일시정지됨)", $"f#{engine.FrameNumber}");
+
+            await SeekAndSettle(40.0);
+            await Press(Key.F6);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001);
+            Check(Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001, "F6 → 이전 북마크(30s)", Timecode.Format(engine.Position));
+            await Press(Key.F6);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 12.0) < 0.001);
+            Check(Math.Abs(engine.Position.TotalSeconds - 12.0) < 0.001, "F6 → 그 앞 북마크(12s)", Timecode.Format(engine.Position));
+            await Press(Key.F7);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001);
+            Check(Math.Abs(engine.Position.TotalSeconds - 30.0) < 0.001, "F7 → 다음 북마크(30s)", Timecode.Format(engine.Position));
+
+            var f3Before = engine.FrameNumber ?? 0;
+            await Press(Key.F3);
+            await WaitUntil(() => engine.FrameNumber == f3Before + 1);
+            await Press(Key.F4);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - (30.0 + 1 / 60.0 + 2.5)) < 0.01);
+            Check(engine.FrameNumber is not null && Math.Abs(engine.Position.TotalSeconds - (30.0 + 1 / 60.0 + 2.5)) < 0.01,
+                  "F3 프레임 앞 → F4 앞으로 점프", Timecode.Format(engine.Position));
+
+            // 재생 중 동작 키가 아닌 F키는 여전히 막힌다
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Press(Key.F8);
+            await Press(Key.F9);
+            Check(player.IsPlaying, "지정되지 않은 F8 · F9 는 재생 중 무시");
+            player.Pause();
+            await WaitUntil(() => !player.IsPlaying);
+
+            // ── 5-3. 키 바꾸기 · 저장 ───────────────────────────────────────
+            Emit("");
+            Emit("5-3. 설정에서 키 바꾸기 · 저장");
+
+            // 설정 창의 키 입력 대기를 실제 키 이벤트로 거친다
+            var settingsVm = new Settings.SettingsViewModel(shell.KeyMap);
+            var settingsWindow = new Settings.SettingsWindow(settingsVm) { Owner = window };
+            settingsWindow.Show();
+            await Task.Delay(300);
+            var settingsSource = PresentationSource.FromVisual(settingsWindow)!;
+
+            async Task PressIn(Window target, PresentationSource src, Key key)
+            {
+                foreach (var evt in new[] { Keyboard.PreviewKeyDownEvent, Keyboard.PreviewKeyUpEvent })
+                {
+                    target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, src, Environment.TickCount, key) { RoutedEvent = evt });
+                    await Task.Delay(40);
+                }
+            }
+
+            var toggleRow = settingsVm.Bindings.First(b => b.Action == Input.PlaybackAction.TogglePlay);
+            settingsVm.StartCaptureCommand.Execute(toggleRow);
+            await PressIn(settingsWindow, settingsSource, Key.Escape);
+            Check(!settingsVm.IsCapturing && shell.KeyMap[Input.PlaybackAction.TogglePlay] == Key.F5,
+                  "입력 대기 중 ESC → 취소, 키 그대로");
+
+            settingsVm.StartCaptureCommand.Execute(toggleRow);
+            await PressIn(settingsWindow, settingsSource, Key.P);
+            Check(shell.KeyMap[Input.PlaybackAction.TogglePlay] == Key.P && toggleRow.KeyDisplay == "P",
+                  "입력 대기 중 P → 재생/일시정지 = P", toggleRow.KeyDisplay);
+            await Task.Delay(200);
+            Capture(settingsWindow, "m1-settings.png");
+
+            settingsVm.StartCaptureCommand.Execute(toggleRow);
+            await PressIn(settingsWindow, settingsSource, Key.F1);
+            Check(shell.KeyMap[Input.PlaybackAction.TogglePlay] == Key.F1
+                  && shell.KeyMap[Input.PlaybackAction.JumpBack] == Key.P,
+                  "이미 쓰던 F1 → 뒤로 점프와 맞바꿈", settingsVm.Notice ?? "");
+
+            settingsWindow.Close();
+            await Task.Delay(200);
+
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Press(Key.F5);
+            await Task.Delay(300);
+            Check(player.IsPlaying, "옛 키 F5 는 이제 재생 중 무시");
+            await Press(Key.F1);
+            await WaitUntil(() => !player.IsPlaying);
+            Check(!player.IsPlaying, "새 키 F1 로 일시정지");
+
+            var reloaded = new Settings.SettingsStore(paths.SettingsPath).LoadKeyMap(out var settingsError);
+            Check(settingsError is null
+                  && reloaded[Input.PlaybackAction.TogglePlay] == Key.F1
+                  && reloaded[Input.PlaybackAction.JumpBack] == Key.P,
+                  "settings.json 에 저장되어 다시 읽힘", settingsError ?? "");
+
+            shell.KeyMap.ResetToDefaults();
+            reloaded = new Settings.SettingsStore(paths.SettingsPath).LoadKeyMap(out _);
+            Check(reloaded[Input.PlaybackAction.TogglePlay] == Key.F5, "기본값으로 되돌리기도 저장됨");
+
+            await SeekAndSettle(32.5);
 
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────
             Emit("");
@@ -307,7 +453,10 @@ internal static class SmokeTest
     /// </summary>
     private static void Capture(Window window, string fileName)
     {
-        if (window.Content is not FrameworkElement root) return;
+        // 창 내용(Content)이 아니라 창 템플릿의 최상위를 찍는다. 내용에 Margin 이 있으면
+        // 그만큼 밀려서 오른쪽 · 아래가 잘려 찍힌다.
+        if (VisualTreeHelper.GetChildrenCount(window) == 0
+            || VisualTreeHelper.GetChild(window, 0) is not FrameworkElement root) return;
         var dpi = VisualTreeHelper.GetDpi(root);
         var bitmap = new RenderTargetBitmap(
             (int)(root.ActualWidth * dpi.DpiScaleX), (int)(root.ActualHeight * dpi.DpiScaleY),

@@ -26,6 +26,7 @@ public sealed class WindowInputGuard
     private readonly Func<bool> _allowWhilePlaying;
     private readonly Func<bool> _enabled;
     private readonly HashSet<Key> _handledDown = [];
+    private bool _suppressNextKeyMenu;
 
     public WindowInputGuard(
         Window window,
@@ -65,6 +66,12 @@ public sealed class WindowInputGuard
     /// <summary>재생 중 ESC. (FR-504 / D-3 — 일시정지 전용이므로 재생 중에만 의미가 있다)</summary>
     public event Action? EscapePressed;
 
+    /// <summary>재생 중 동작 키 배치. 설정에서 바뀌면 같은 객체가 갱신되므로 다시 넣을 필요 없다. (D-8)</summary>
+    public PlaybackKeyMap? KeyMap { get; set; }
+
+    /// <summary>재생 중 동작 키가 눌렸다. 인자: 동작, 자동 반복 여부.</summary>
+    public Action<PlaybackAction, bool>? PlaybackActionHandler { get; set; }
+
     /// <summary>가드가 꺼진 상태에서 누출이 관측됐을 때. 하네스 대조군용.</summary>
     public event Action<string>? LeakDetected;
 
@@ -74,14 +81,26 @@ public sealed class WindowInputGuard
         // "이게 누름 이벤트인가 뗌 이벤트인가"와 미묘하게 다르다. 라우팅 이벤트로 판정한다.
         var isDown = e.RoutedEvent == Keyboard.PreviewKeyDownEvent;
 
+        var effectiveKey = e.Key switch
+        {
+            Key.System => e.SystemKey,
+            Key.ImeProcessed => e.ImeProcessedKey,       // IME 가 켜져 있으면 문자 키가 이렇게 온다
+            Key.DeadCharProcessed => e.DeadCharProcessedKey,
+            _ => e.Key,
+        };
+        var modifiers = Keyboard.Modifiers;
+        var action = KeyMap?.Find(effectiveKey, modifiers);
+
         var ctx = new KeyEventContext(
-            Key: e.Key,
+            Key: e.Key == Key.System ? Key.System : effectiveKey,
             SystemKey: e.SystemKey,
-            Modifiers: Keyboard.Modifiers,
+            Modifiers: modifiers,
             IsPlayerScreen: true,
             IsPlaying: _isPlaying(),
             IsTextInputFocused: Keyboard.FocusedElement is TextBoxBase,
-            AllowShortcutsWhilePlaying: _allowWhilePlaying());
+            AllowShortcutsWhilePlaying: _allowWhilePlaying(),
+            IsPlaybackActionKey: action is not null,
+            IsRepeat: e.IsRepeat);
 
         if (!_enabled())
         {
@@ -104,6 +123,16 @@ public sealed class WindowInputGuard
 
             case InputDecision.Swallow:
                 e.Handled = true;
+                break;
+
+            case InputDecision.PlaybackAction:
+                e.Handled = true;                            // 누름·뗌 둘 다 소비
+                if (isDown && action is { } a)
+                {
+                    // Alt · F10 을 지정했다면, 뗄 때 시스템 메뉴가 열리지 않게 한다. (§6.2-6)
+                    if (effectiveKey is Key.LeftAlt or Key.RightAlt or Key.F10) _suppressNextKeyMenu = true;
+                    PlaybackActionHandler?.Invoke(a, e.IsRepeat);
+                }
                 break;
 
             case InputDecision.Dispatch:
@@ -139,8 +168,9 @@ public sealed class WindowInputGuard
         var altAlone = lParam == IntPtr.Zero;
         if (!altAlone) return IntPtr.Zero;      // Alt+Space 등은 통과
 
-        if (Blocking)
+        if (Blocking || _suppressNextKeyMenu)
         {
+            _suppressNextKeyMenu = false;
             handled = true;                     // DefWindowProc 로 넘기지 않는다
             return IntPtr.Zero;
         }

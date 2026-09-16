@@ -89,6 +89,9 @@
             <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Padding="16,8"
                     Content="📂  영상 열기  (Ctrl+O)"
                     Command="{Binding DataContext.OpenFileDialogCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="⚙  설정" Margin="0,0,8,0"
+                    Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    ToolTip="재생 중 동작 키 바꾸기" />
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="OtogeTrainer" FontSize="22" FontWeight="Bold" />
                 <TextBlock Text="플레이 영상 복기" Style="{StaticResource Caption}" FontSize="13" Margin="12,6,0,0" />

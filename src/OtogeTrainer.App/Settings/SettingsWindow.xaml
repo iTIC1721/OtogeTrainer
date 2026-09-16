@@ -1,0 +1,78 @@
+<Window x:Class="OtogeTrainer.App.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:OtogeTrainer.App"
+        xmlns:settings="clr-namespace:OtogeTrainer.App.Settings"
+        Title="설정 — OtogeTrainer"
+        Width="620" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{StaticResource Bg0}" FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <app:HasValueToVisibilityConverter x:Key="HasValue" />
+    </Window.Resources>
+
+    <StackPanel Margin="24,20,24,20">
+        <TextBlock Text="재생 중 동작 키" FontSize="17" FontWeight="SemiBold" />
+        <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
+                   Text="재생 중에는 ESC 와 아래 키만 동작합니다. 영상 위 마우스 조작은 없습니다. 연습하는 리듬게임의 키와 겹친다면 다른 키로 바꾸세요. 일시정지 중에도 다른 단축키보다 우선합니다." />
+
+        <Border Margin="0,16,0,0" Background="{StaticResource Bg1}" CornerRadius="6" Padding="8">
+            <ItemsControl ItemsSource="{Binding Bindings}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type settings:KeyBindingItem}">
+                        <Grid Margin="8,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Label}" FontSize="14" />
+                                <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                            </StackPanel>
+
+                            <Button x:Name="KeyButton" Grid.Column="1" Margin="8,0" MinHeight="36"
+                                    Command="{Binding DataContext.StartCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="눌러서 새 키 입력 · ESC 로 취소">
+                                <TextBlock x:Name="KeyLabel" Text="{Binding KeyDisplay}" Style="{StaticResource MonoText}" FontSize="14" />
+                            </Button>
+
+                            <Button Grid.Column="2" Style="{StaticResource GhostButton}" Content="해제"
+                                    Command="{Binding DataContext.UnbindCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="이 동작에 키를 지정하지 않습니다" />
+                        </Grid>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsCapturing}" Value="True">
+                                <Setter TargetName="KeyButton" Property="BorderBrush" Value="{StaticResource Warn}" />
+                                <Setter TargetName="KeyLabel" Property="Foreground" Value="{StaticResource Warn}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsUnbound}" Value="True">
+                                <Setter TargetName="KeyLabel" Property="Foreground" Value="{StaticResource Fg2}" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
+        <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="5" Background="{StaticResource Bg2}"
+                Visibility="{Binding Notice, Converter={StaticResource HasValue}}">
+            <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" FontSize="12.5" />
+        </Border>
+
+        <DockPanel Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="닫기" MinWidth="88"
+                    Click="OnClose" />
+            <Button DockPanel.Dock="Left" Content="모두 기본값으로 (F1 ~ F7)" HorizontalAlignment="Left"
+                    Command="{Binding ResetAllCommand}" />
+        </DockPanel>
+
+        <TextBlock Margin="0,14,0,0" Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
+                   Text="변경은 즉시 저장됩니다. 다른 동작이 쓰던 키를 고르면 두 동작의 키를 맞바꿉니다. Alt · Shift 같은 수정자 키도 지정할 수 있지만, 다른 수정자와 함께 누르면 동작하지 않습니다 (Alt+F4 창 닫기와 겹치지 않도록)." />
+    </StackPanel>
+</Window>

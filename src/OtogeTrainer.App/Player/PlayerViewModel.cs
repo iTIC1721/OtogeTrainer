@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OtogeTrainer.Core.Library;
 using OtogeTrainer.Core.Playback;
+using OtogeTrainer.App.Settings;
 using OtogeTrainer.Input;
 
 namespace OtogeTrainer.App.Player;
@@ -22,25 +23,25 @@ public sealed partial class PlayerViewModel : ObservableObject
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(33);
     private static readonly TimeSpan PersistInterval = TimeSpan.FromSeconds(5);
 
-    /// <summary>우클릭 드래그가 빠르면 역방향 스텝이 밀린다. 이보다 촘촘한 요청은 버린다.</summary>
-    private static readonly TimeSpan FrameDragThrottle = TimeSpan.FromMilliseconds(25);
-
     private readonly IMediaEngine _engine;
     private readonly IVideoLibrary _library;
     private readonly AppPaths _paths;
     private readonly TimeProvider _clock;
     private readonly DispatcherTimer _tick;
+    private readonly PlaybackKeyMap _keyMap;
 
     private DateTimeOffset _lastPersist;
-    private DateTimeOffset _lastFrameDrag;
     private long _openGeneration;
 
-    public PlayerViewModel(IMediaEngine engine, IVideoLibrary library, AppPaths paths, TimeProvider? clock = null)
+    public PlayerViewModel(
+        IMediaEngine engine, IVideoLibrary library, AppPaths paths, PlaybackKeyMap keyMap, TimeProvider? clock = null)
     {
         _engine = engine;
         _library = library;
         _paths = paths;
+        _keyMap = keyMap;
         _clock = clock ?? TimeProvider.System;
+        _keyMap.Changed += (_, _) => OnPropertyChanged(nameof(PlaybackKeysHint));
 
         for (var slot = 1; slot <= BookmarkSlots.Count; slot++)
             Slots.Add(new BookmarkSlotViewModel(slot));
@@ -274,28 +275,12 @@ public sealed partial class PlayerViewModel : ObservableObject
         _engine.StepFrame(direction);
     }
 
-    /// <summary>우클릭 드래그용. 너무 촘촘한 요청은 버린다.</summary>
-    public void DragStepFrame(int direction)
-    {
-        var now = _clock.GetUtcNow();
-        if (now - _lastFrameDrag < FrameDragThrottle) return;
-        _lastFrameDrag = now;
-        StepFrame(direction);
-    }
-
     /// <summary>5초 × 배속 점프. (FR-303 / D-2)</summary>
     [RelayCommand]
     public void Jump(int direction)
     {
         if (!HasVideo) return;
         _engine.SeekRelative(JumpRules.Amount(_engine.Speed) * Math.Sign(direction));
-    }
-
-    /// <summary>휠 여러 칸을 한 번에 굴린 경우.</summary>
-    public void JumpBy(int steps)
-    {
-        if (!HasVideo || steps == 0) return;
-        _engine.SeekRelative(JumpRules.Amount(_engine.Speed) * steps);
     }
 
     public void BeginScrub() => IsScrubbing = HasVideo;
@@ -385,7 +370,7 @@ public sealed partial class PlayerViewModel : ObservableObject
         Persist(() => _library.ClearBookmarkAsync(video.Id, slot));
     }
 
-    /// <summary>사이드 버튼. 슬롯 번호가 아니라 시간 순으로 이동한다.</summary>
+    /// <summary>이전 / 다음 북마크. 슬롯 번호가 아니라 시간 순으로 이동한다.</summary>
     public void NavigateBookmark(int direction)
     {
         if (!HasVideo) return;
@@ -397,6 +382,39 @@ public sealed partial class PlayerViewModel : ObservableObject
 
     [RelayCommand]
     public void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
+
+    // ── 재생 중 동작 키 (D-8) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// 재생 중에도 동작하는 키가 눌렸다. 자동 반복 입력은 연속으로 해도 되는 동작(점프 · 프레임)만 받는다 —
+    /// 재생/일시정지를 누르고 있으면 초당 수십 번 토글되기 때문.
+    /// </summary>
+    public void ExecuteAction(PlaybackAction action, bool isRepeat)
+    {
+        switch (action)
+        {
+            case PlaybackAction.TogglePlay when !isRepeat: TogglePlay(); break;
+            case PlaybackAction.JumpBack: Jump(-1); break;
+            case PlaybackAction.JumpForward: Jump(+1); break;
+            case PlaybackAction.FrameBack: StepFrame(-1); break;
+            case PlaybackAction.FrameForward: StepFrame(+1); break;
+            case PlaybackAction.PreviousBookmark when !isRepeat: NavigateBookmark(-1); break;
+            case PlaybackAction.NextBookmark when !isRepeat: NavigateBookmark(+1); break;
+        }
+    }
+
+    /// <summary>화면 하단 안내. 설정에서 키를 바꾸면 따라 바뀐다.</summary>
+    public string PlaybackKeysHint
+    {
+        get
+        {
+            string K(PlaybackAction a) => KeyText.Of(_keyMap[a]);
+            return $"재생 중:  ESC 일시정지 · {K(PlaybackAction.TogglePlay)} 재생/일시정지 · "
+                 + $"{K(PlaybackAction.JumpBack)} / {K(PlaybackAction.JumpForward)} 점프 · "
+                 + $"{K(PlaybackAction.FrameBack)} / {K(PlaybackAction.FrameForward)} 프레임 · "
+                 + $"{K(PlaybackAction.PreviousBookmark)} / {K(PlaybackAction.NextBookmark)} 북마크";
+        }
+    }
 
     // ── 단축키 (일시정지 상태에서만 도달, UI-BLUEPRINT §9) ────────────────────
 

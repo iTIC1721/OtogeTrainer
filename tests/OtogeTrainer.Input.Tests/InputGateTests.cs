@@ -19,8 +19,10 @@ public class InputGateTests
         Key systemKey = Key.None,
         bool isPlayerScreen = true,
         bool isTextInputFocused = false,
-        bool allowShortcutsWhilePlaying = false)
-        => new(key, systemKey, modifiers, isPlayerScreen, isPlaying, isTextInputFocused, allowShortcutsWhilePlaying);
+        bool allowShortcutsWhilePlaying = false,
+        bool isPlaybackActionKey = false)
+        => new(key, systemKey, modifiers, isPlayerScreen, isPlaying, isTextInputFocused, allowShortcutsWhilePlaying,
+               isPlaybackActionKey);
 
     /// <summary>UI-BLUEPRINT §9 의 단축키 전체.</summary>
     public static TheoryData<Key> ShortcutKeys() =>
@@ -146,11 +148,13 @@ public class InputGateTests
         foreach (var playing in new[] { true, false })
         foreach (var textFocus in new[] { true, false })
         foreach (var allow in new[] { true, false })
+        foreach (var actionKey in new[] { true, false })
         {
             var ctx = Ctx(key, playing,
                 isPlayerScreen: playerScreen,
                 isTextInputFocused: textFocus,
-                allowShortcutsWhilePlaying: allow);
+                allowShortcutsWhilePlaying: allow,
+                isPlaybackActionKey: actionKey);
 
             var actual = Gate.Evaluate(ctx);
 
@@ -158,6 +162,7 @@ public class InputGateTests
                 textFocus ? InputDecision.PassThrough
                 : !playerScreen ? InputDecision.Dispatch
                 : ctx.EffectiveKey == Key.Escape ? InputDecision.Escape
+                : actionKey ? InputDecision.PlaybackAction
                 : playing && !allow ? InputDecision.Swallow
                 : InputDecision.Dispatch;
 
@@ -165,15 +170,35 @@ public class InputGateTests
         }
     }
 
-    /// <summary>재생 중 삼켜지지 않는 키는 ESC 하나뿐이어야 한다. (D-4 예외 없음)</summary>
+    /// <summary>
+    /// 재생 중 삼켜지지 않는 키는 ESC 와 재생 중 동작 키뿐이어야 한다. (D-4 · D-8)
+    /// 키 배치는 실제 기본 배치를 쓴다.
+    /// </summary>
     [Fact]
-    public void 재생_중_통과하는_키는_ESC_뿐이다()
+    public void 재생_중_통과하는_키는_ESC와_재생중_동작키_뿐이다()
     {
+        var map = new PlaybackKeyMap();
         var passed = Enum.GetValues<Key>()
             .Distinct()
-            .Where(k => Gate.Evaluate(Ctx(k, isPlaying: true)) != InputDecision.Swallow)
+            .Where(k => Gate.Evaluate(Ctx(k, isPlaying: true,
+                isPlaybackActionKey: map.Find(k, ModifierKeys.None) is not null)) != InputDecision.Swallow)
+            .OrderBy(k => k)
             .ToArray();
 
-        Assert.Equal([Key.Escape], passed);
+        Assert.Equal(
+            new[] { Key.Escape, Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6, Key.F7 }.OrderBy(k => k),
+            passed);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void 재생중_동작키는_재생_여부와_무관하게_동작한다(bool isPlaying)
+        => Assert.Equal(InputDecision.PlaybackAction,
+            Gate.Evaluate(Ctx(Key.F5, isPlaying, isPlaybackActionKey: true)));
+
+    [Fact]
+    public void 텍스트_입력_중에는_재생중_동작키도_통과시킨다()
+        => Assert.Equal(InputDecision.PassThrough,
+            Gate.Evaluate(Ctx(Key.F5, isPlaying: true, isTextInputFocused: true, isPlaybackActionKey: true)));
 }

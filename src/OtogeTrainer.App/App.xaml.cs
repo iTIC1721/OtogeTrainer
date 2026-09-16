@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using OtogeTrainer.App.Library;
 using OtogeTrainer.App.Player;
+using OtogeTrainer.App.Settings;
 using OtogeTrainer.Data;
 using OtogeTrainer.Playback;
 
@@ -62,12 +63,16 @@ public partial class App : Application
             return;
         }
 
+        var settingsStore = new SettingsStore(_paths.SettingsPath);
+        var keyMap = settingsStore.LoadKeyMap(out var settingsError);
+
         var library = new SqliteVideoLibrary(db);
         var surface = new VideoSurfaceHost();
         _engine = new MpvMediaEngine(surface);
 
-        var player = new PlayerViewModel(_engine, library, _paths);
-        var shell = new ShellViewModel(new LibraryViewModel(library, _paths), player, library);
+        var player = new PlayerViewModel(_engine, library, _paths, keyMap);
+        var shell = new ShellViewModel(new LibraryViewModel(library, _paths), player, library, keyMap, settingsStore);
+        if (settingsError is not null) shell.Notice = settingsError;
         var window = new MainWindow(shell, surface);
         MainWindow = window;
         window.Show();

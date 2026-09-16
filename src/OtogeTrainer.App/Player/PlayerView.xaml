@@ -49,6 +49,10 @@
             <Button DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="◀  라이브러리"
                     Command="{Binding BackCommand}" ToolTip="라이브러리로 돌아가기 (일시정지 중 Alt+←)" />
 
+            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="⚙  설정" Margin="8,0,0,0"
+                    Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    ToolTip="재생 중 동작 키 바꾸기" />
+
             <Border DockPanel.Dock="Right" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
                 <Border.Style>
                     <Style TargetType="Border">
@@ -120,13 +124,13 @@
                 <!-- 1행: 재생 · 탐색 · 배속 -->
                 <WrapPanel Margin="0,0,0,8">
                     <Button Style="{StaticResource ControlButton}" Command="{Binding JumpCommand}" CommandParameter="{StaticResource Back}"
-                            ToolTip="뒤로 점프 — 5초 × 배속 (←, 휠 위)">
+                            ToolTip="뒤로 점프 — 5초 × 배속 (일시정지 중 ←)">
                         <TextBlock Text="{Binding JumpText, StringFormat='⏮ {0}'}" />
                     </Button>
                     <Button Style="{StaticResource ControlButton}" Content="◀❙ 1f" Command="{Binding StepFrameCommand}"
-                            CommandParameter="{StaticResource Back}" ToolTip="한 프레임 뒤로 (, 또는 Shift+←, 우클릭 드래그 ←)" />
+                            CommandParameter="{StaticResource Back}" ToolTip="한 프레임 뒤로 (일시정지 중 , 또는 Shift+←)" />
                     <Button Style="{StaticResource ControlButton}" MinWidth="104" Command="{Binding TogglePlayCommand}"
-                            ToolTip="재생 / 일시정지 (Space, 영상 클릭)">
+                            ToolTip="재생 / 일시정지 (일시정지 중 Space)">
                         <TextBlock>
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -141,9 +145,9 @@
                         </TextBlock>
                     </Button>
                     <Button Style="{StaticResource ControlButton}" Content="1f ❙▶" Command="{Binding StepFrameCommand}"
-                            CommandParameter="{StaticResource Forward}" ToolTip="한 프레임 앞으로 (. 또는 Shift+→, 우클릭 드래그 →)" />
+                            CommandParameter="{StaticResource Forward}" ToolTip="한 프레임 앞으로 (일시정지 중 . 또는 Shift+→)" />
                     <Button Style="{StaticResource ControlButton}" Command="{Binding JumpCommand}" CommandParameter="{StaticResource Forward}"
-                            ToolTip="앞으로 점프 — 5초 × 배속 (→, 휠 아래)">
+                            ToolTip="앞으로 점프 — 5초 × 배속 (일시정지 중 →)">
                         <TextBlock Text="{Binding JumpText, StringFormat='{}{0} ⏭'}" />
                     </Button>
 
@@ -195,7 +199,7 @@
                     <Border Style="{StaticResource Divider}" />
 
                     <TextBlock Text="북마크" Style="{StaticResource SectionLabel}"
-                               ToolTip="마우스 사이드 버튼으로 이전 / 다음 북마크로 이동" />
+                               ToolTip="재생 중 동작 키로 시간 순 이전 / 다음 북마크로 이동" />
                     <ItemsControl ItemsSource="{Binding Slots}" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -238,8 +242,12 @@
                     </ItemsControl>
                 </WrapPanel>
 
-                <TextBlock Margin="0,10,0,0" Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
-                           Text="재생 중: ESC 일시정지 · 영상 클릭 재생/일시정지 · 휠 점프 · 우클릭 드래그 프레임 · 사이드 버튼 북마크      일시정지 중: Space · ←/→ · ,/. · ↑/↓ · [ ] · 1~5 (Ctrl 저장 · Shift 비우기) · Alt+← 라이브러리" />
+                <StackPanel Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
+                               Foreground="{StaticResource Warn}" Text="{Binding PlaybackKeysHint}" />
+                    <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Text="일시정지 중:  Space · ←/→ · ,/. · ↑/↓ · [ ] · 1~5 (Ctrl 저장 · Shift 비우기) · Alt+← 라이브러리      영상 위 마우스 조작은 없습니다" />
+                </StackPanel>
             </StackPanel>
         </Border>
     </Grid>

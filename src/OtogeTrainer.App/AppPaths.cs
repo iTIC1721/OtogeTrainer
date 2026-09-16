@@ -11,6 +11,7 @@ public sealed class AppPaths
         DatabasePath = Path.Combine(DataDirectory, "library.db");
         ThumbnailDirectory = Path.Combine(DataDirectory, "thumbs");
         LogDirectory = Path.Combine(DataDirectory, "logs");
+        SettingsPath = Path.Combine(DataDirectory, "settings.json");
 
         Directory.CreateDirectory(ThumbnailDirectory);
         Directory.CreateDirectory(LogDirectory);
@@ -24,6 +25,7 @@ public sealed class AppPaths
     public string DatabasePath { get; }
     public string ThumbnailDirectory { get; }
     public string LogDirectory { get; }
+    public string SettingsPath { get; }
 
     /// <summary>
     /// 썸네일은 지문으로 이름 짓는다. 파일을 옮겨도(경로가 바뀌어도) 같은 썸네일을 찾는다.

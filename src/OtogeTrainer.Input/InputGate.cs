@@ -16,6 +16,9 @@ public enum InputDecision
 
     /// <summary>WPF 기본 처리에 맡긴다. (텍스트 입력 포커스 등 — FR-509)</summary>
     PassThrough,
+
+    /// <summary>재생 중 동작 키. 재생 · 일시정지 어느 상태에서든 동작한다. (D-8)</summary>
+    PlaybackAction,
 }
 
 /// <summary>판정에 필요한 입력 상태 묶음. WPF 이벤트에서 채워 넣는다.</summary>
@@ -30,6 +33,10 @@ public enum InputDecision
 /// <param name="IsPlaying">재생 중인가. 이 값 하나가 차단 여부를 가른다. (SPEC §6.4)</param>
 /// <param name="IsTextInputFocused">텍스트 입력 컨트롤이 포커스를 가졌는가. 최우선 예외. (FR-509)</param>
 /// <param name="AllowShortcutsWhilePlaying">설정 "재생 중에도 단축키 허용". (FR-508, 기본 false)</param>
+/// <param name="IsPlaybackActionKey">
+/// 재생 중 동작 키(<see cref="PlaybackKeyMap"/>)로 지정된 키인가. 게이트는 키 배치를 모른다 — 호출 측이 찾아서 넘긴다. (D-8)
+/// </param>
+/// <param name="IsRepeat">키를 누르고 있어 자동 반복된 입력인가.</param>
 public readonly record struct KeyEventContext(
     Key Key,
     Key SystemKey,
@@ -37,7 +44,9 @@ public readonly record struct KeyEventContext(
     bool IsPlayerScreen,
     bool IsPlaying,
     bool IsTextInputFocused,
-    bool AllowShortcutsWhilePlaying)
+    bool AllowShortcutsWhilePlaying,
+    bool IsPlaybackActionKey = false,
+    bool IsRepeat = false)
 {
     /// <summary>Alt/F10 래핑을 벗겨낸 실제 키. (SPEC §6.2-6)</summary>
     public Key EffectiveKey => Key == Key.System ? SystemKey : Key;
@@ -81,11 +90,16 @@ public sealed class InputGate : IInputGate
         if (ctx.EffectiveKey == Key.Escape && ctx.Modifiers == ModifierKeys.None)
             return InputDecision.Escape;
 
-        // 4. 재생 중이면 예외 없이 삼킨다. 전체화면·음소거·볼륨도 예외가 아니다. (D-4)
+        // 4. 재생 중 동작 키는 재생 중에도 동작한다. 일시정지 중에도 다른 단축키보다 우선한다 —
+        //    사용자가 Space 같은 키를 지정했을 때 상태에 따라 뜻이 바뀌면 헷갈리기 때문. (D-8)
+        if (ctx.IsPlaybackActionKey)
+            return InputDecision.PlaybackAction;
+
+        // 5. 재생 중이면 그 밖의 키는 전부 삼킨다. 전체화면·음소거·볼륨도 예외가 아니다. (D-4)
         if (ctx.IsPlaying && !ctx.AllowShortcutsWhilePlaying)
             return InputDecision.Swallow;
 
-        // 5. 일시정지 상태 — 단축키 정상 동작.
+        // 6. 일시정지 상태 — 단축키 정상 동작.
         return InputDecision.Dispatch;
     }
 }
