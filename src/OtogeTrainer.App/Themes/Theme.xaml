@@ -113,8 +113,9 @@
         </Setter>
     </Style>
 
+    <!-- 클릭 · 드래그 이동은 PlayerView 코드 비하인드가 직접 처리한다. 슬라이더 기본 클릭 이동은 끈다. -->
     <Style x:Key="Timeline" TargetType="Slider">
-        <Setter Property="IsMoveToPointEnabled" Value="True" />
+        <Setter Property="IsMoveToPointEnabled" Value="False" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>

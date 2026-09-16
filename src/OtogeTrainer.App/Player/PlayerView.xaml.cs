@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using OtogeTrainer.Core.Playback;
@@ -9,7 +11,20 @@ namespace OtogeTrainer.App.Player;
 
 public partial class PlayerView : UserControl
 {
-    public PlayerView() => InitializeComponent();
+    public PlayerView()
+    {
+        InitializeComponent();
+
+        // ★ XAML 이벤트 속성(PreviewMouseLeftButtonDown="…")으로 걸면 트랙 클릭을 받지 못한다.
+        //   Slider 는 IsMoveToPointEnabled 일 때 자기 클래스 처리기에서 트랙 클릭을 "처리됨" 으로
+        //   표시하는데, 클래스 처리기는 인스턴스 처리기보다 먼저 돈다. 그래서 스크럽 시작이 불리지
+        //   않았고, 슬라이더 값만 잠깐 바뀌었다가 30Hz 갱신이 원래 위치로 되돌려 버렸다.
+        //   handledEventsToo 로 걸어야 한다.
+        Timeline.AddHandler(PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(OnTimelineDown), handledEventsToo: true);
+        Timeline.AddHandler(PreviewMouseMoveEvent, new MouseEventHandler(OnTimelineMove), handledEventsToo: true);
+        Timeline.AddHandler(PreviewMouseLeftButtonUpEvent, new MouseButtonEventHandler(OnTimelineUp), handledEventsToo: true);
+        Timeline.AddHandler(LostMouseCaptureEvent, new MouseEventHandler(OnTimelineCaptureLost), handledEventsToo: true);
+    }
 
     private PlayerViewModel? ViewModel => DataContext as PlayerViewModel;
 
@@ -18,14 +33,66 @@ public partial class PlayerView : UserControl
     /// </summary>
     public void AttachSurface(VideoSurfaceHost surface) => VideoFrame.Child = surface;
 
-    // 타임라인: 누르는 동안은 엔진 위치로 덮어쓰지 않고, 뗄 때 한 번만 정확 시크한다. (FR-202)
-    private void OnTimelinePressed(object sender, MouseButtonEventArgs e) => ViewModel?.BeginScrub();
+    internal Slider TimelineSlider => Timeline;
 
-    private void OnTimelineReleased(object sender, MouseButtonEventArgs e) => ViewModel?.EndScrub(Timeline.Value);
+    // ── 타임라인 (FR-202) ────────────────────────────────────────────────────
+    //
+    // 트랙이든 썸이든 누른 곳으로 바로 이동하고, 누른 채 끌면 따라간다. 드래그는 슬라이더가
+    // 마우스를 직접 잡아서 처리한다 — WPF 기본 동작으로는 썸을 잡았을 때만 끌 수 있고,
+    // 트랙을 눌러 이동한 뒤에는 끌기가 이어지지 않는다.
 
+    private void OnTimelineDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ViewModel is not { HasVideo: true } vm) return;
+
+        vm.BeginScrub(ValueAt(e));
+        Timeline.CaptureMouse();
+        e.Handled = true;   // 썸의 자체 드래그가 따로 시작되지 않게
+    }
+
+    private void OnTimelineMove(object sender, MouseEventArgs e)
+    {
+        if (!Timeline.IsMouseCaptured || ViewModel is not { IsScrubbing: true } vm) return;
+        vm.UpdateScrub(ValueAt(e));
+    }
+
+    private void OnTimelineUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!Timeline.IsMouseCaptured) return;
+        var value = ValueAt(e);
+        Timeline.ReleaseMouseCapture();          // → LostMouseCapture 가 뒤따른다
+        ViewModel?.EndScrub(value);
+        e.Handled = true;
+    }
+
+    /// <summary>창 밖으로 끌고 나가 캡처를 잃는 등, 뗌 없이 끝난 경우.</summary>
     private void OnTimelineCaptureLost(object sender, MouseEventArgs e)
     {
-        if (ViewModel?.IsScrubbing == true) ViewModel.EndScrub(Timeline.Value);
+        if (ViewModel is { IsScrubbing: true } vm) vm.EndScrub(vm.TimelinePosition);
+    }
+
+    /// <summary>
+    /// 마우스 위치의 타임라인 값(초). 트랙 폭에서 직접 비율을 계산한다.
+    /// <para>
+    /// ★ <c>Track.ValueFromPoint</c> 를 쓰면 안 된다. 그 메서드는 절대 위치가 아니라
+    /// "썸의 현재 중심에서 떨어진 거리" 로 계산하는데, 썸 중심은 <b>마지막 레이아웃 시점</b>의 위치다.
+    /// 재생 중에는 값이 30Hz 로 바뀌어 썸 위치가 한 박자 늦으므로 오차가 생기고, 누름 직후
+    /// 캡처로 생기는 이동 이벤트에서 한 번 더 누적된다. 재생 중 40% 를 눌렀는데 20% 로 간
+    /// 원인이었다(일시정지 중에는 값이 멈춰 있어 드러나지 않았다).
+    /// </para>
+    /// </summary>
+    private double ValueAt(MouseEventArgs e)
+    {
+        if (Timeline.Template.FindName("PART_Track", Timeline) is not Track track || track.ActualWidth <= 0)
+            return Timeline.Value;
+
+        // 썸 반지름만큼은 양 끝에서 비워 둔다 — 썸 중심이 최소 · 최대 값에 닿는 지점
+        var thumb = track.Thumb?.ActualWidth ?? 0;
+        var usable = track.ActualWidth - thumb;
+        var x = e.GetPosition(track).X - thumb / 2;
+        var ratio = usable > 0 ? Math.Clamp(x / usable, 0, 1) : 0;
+
+        return Timeline.Minimum + ratio * (Timeline.Maximum - Timeline.Minimum);
     }
 }
 

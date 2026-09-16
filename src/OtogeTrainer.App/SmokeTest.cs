@@ -35,6 +35,12 @@ internal static class SmokeTest
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint { public int X, Y; }
+
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
+
     public static async Task<int> RunAsync(MainWindow window, ShellViewModel shell, AppPaths paths, string[] args)
     {
         var log = new StringBuilder();
@@ -353,6 +359,84 @@ internal static class SmokeTest
             reloaded = new Settings.SettingsStore(paths.SettingsPath).LoadKeyMap(out _);
             Check(reloaded[Input.PlaybackAction.TogglePlay] == Key.F5, "기본값으로 되돌리기도 저장됨");
 
+            await SeekAndSettle(32.5);
+
+            // ── 5-4. 타임라인 클릭 · 드래그 (FR-202) ────────────────────────
+            // 창에 실제 마우스 메시지를 보낸다. WPF 의 슬라이더 · 썸 · 마우스 캡처가 전부 실제 경로로 돈다.
+            Emit("");
+            Emit("5-4. 타임라인 클릭 · 드래그 (FR-202)");
+            var mainHwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            var timeline = window.Timeline;
+            var duration = engine.Duration!.Value.TotalSeconds;
+
+            IntPtr TimelinePoint(double fraction)
+            {
+                var dip = timeline.TranslatePoint(new Point(timeline.ActualWidth * fraction, timeline.ActualHeight / 2), window);
+                var scale = VisualTreeHelper.GetDpi(window);
+                var x = (int)Math.Round(dip.X * scale.DpiScaleX);
+                var y = (int)Math.Round(dip.Y * scale.DpiScaleY);
+                return (IntPtr)((y << 16) | (x & 0xFFFF));
+            }
+
+            // WPF 는 마우스 이동 메시지는 메시지의 좌표를 쓰지만, 버튼 메시지에서는 실제 커서 위치를
+            // 읽는다. 메시지만 보내면 사용자의 커서가 있는 곳을 누른 것으로 처리된다(처음 이 테스트가
+            // 75% 클릭을 120s 로 판정한 원인). 커서를 실제로 그 자리에 옮긴 뒤 메시지를 보낸다.
+            // 클릭 자체는 이 창에만 보내므로 다른 프로그램을 누를 위험은 없다.
+            GetCursorPos(out var cursorBefore);
+
+            async Task Mouse(int msg, double fraction, bool leftDown)
+            {
+                var screen = timeline.PointToScreen(new Point(timeline.ActualWidth * fraction, timeline.ActualHeight / 2));
+                SetCursorPos((int)Math.Round(screen.X), (int)Math.Round(screen.Y));
+                PostMessage(mainHwnd, msg, (IntPtr)(leftDown ? 1 : 0), TimelinePoint(fraction));
+                await Task.Delay(80);
+            }
+
+            // 썸(현재 위치)에서 먼 곳을 클릭해야 트랙 클릭 경로를 탄다
+            await SeekAndSettle(10.0);
+            await Task.Delay(200);
+            var expectedClick = duration * 0.75;
+            await Mouse(WM_MOUSEMOVE, 0.75, false);
+            await Mouse(WM_LBUTTONDOWN, 0.75, true);
+            await Mouse(WM_LBUTTONUP, 0.75, false);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - expectedClick) < 3, 2000);
+            await Task.Delay(300);
+            Check(Math.Abs(engine.Position.TotalSeconds - expectedClick) < 3,
+                  "일시정지 중 트랙 75% 지점 클릭 → 그 위치로 이동",
+                  $"기대 ≈{expectedClick:0.0}s · 실제 {engine.Position.TotalSeconds:0.0}s");
+
+            // 트랙 아무 데서나 눌러 끌고 가서 놓기
+            await SeekAndSettle(10.0);
+            await Task.Delay(200);
+            var expectedDrag = duration * 0.5;
+            await Mouse(WM_MOUSEMOVE, 0.25, false);
+            await Mouse(WM_LBUTTONDOWN, 0.25, true);
+            foreach (var f in new[] { 0.3, 0.35, 0.4, 0.45, 0.5 }) await Mouse(WM_MOUSEMOVE, f, true);
+            var duringDrag = engine.Position.TotalSeconds;
+            await Mouse(WM_LBUTTONUP, 0.5, false);
+            await WaitUntil(() => Math.Abs(engine.Position.TotalSeconds - expectedDrag) < 3, 2000);
+            await Task.Delay(300);
+            Check(Math.Abs(engine.Position.TotalSeconds - expectedDrag) < 3,
+                  "25% 에서 눌러 50% 까지 끌고 놓기 → 50% 위치",
+                  $"기대 ≈{expectedDrag:0.0}s · 실제 {engine.Position.TotalSeconds:0.0}s");
+            Check(duringDrag > 20, "끄는 도중에도 영상이 따라옴", $"드래그 중 {duringDrag:0.0}s");
+
+            // 재생 중에도
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            var expectedPlaying = duration * 0.4;
+            await Mouse(WM_MOUSEMOVE, 0.4, false);
+            await Mouse(WM_LBUTTONDOWN, 0.4, true);
+            await Mouse(WM_LBUTTONUP, 0.4, false);
+            await Task.Delay(500);
+            Check(Math.Abs(engine.Position.TotalSeconds - expectedPlaying) < 3 && player.IsPlaying,
+                  "재생 중 40% 지점 클릭 → 이동하고 계속 재생",
+                  $"기대 ≈{expectedPlaying:0.0}s · 실제 {engine.Position.TotalSeconds:0.0}s");
+            Check(Keyboard.FocusedElement is Window, "타임라인을 만진 뒤에도 포커스가 창에 있음 (ESC)",
+                  Keyboard.FocusedElement?.GetType().Name ?? "null");
+            await Press(Key.Escape);
+            await WaitUntil(() => !player.IsPlaying);
+            SetCursorPos(cursorBefore.X, cursorBefore.Y);   // 사용자 커서를 원래 자리로
             await SeekAndSettle(32.5);
 
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────

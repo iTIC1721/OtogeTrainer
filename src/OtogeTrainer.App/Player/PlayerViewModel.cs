@@ -31,7 +31,14 @@ public sealed partial class PlayerViewModel : ObservableObject
     private readonly PlaybackKeyMap _keyMap;
 
     private DateTimeOffset _lastPersist;
+    private DateTimeOffset _lastScrubSeek;
     private long _openGeneration;
+
+    /// <summary>
+    /// 드래그 중 미리보기 시크 간격. 매 마우스 이동마다 시크하면 긴 GOP 영상에서 밀린다.
+    /// mpv 는 대기 중인 절대 시크를 최신 것으로 덮어쓰므로 밀려도 쌓이지는 않는다.
+    /// </summary>
+    private static readonly TimeSpan ScrubSeekInterval = TimeSpan.FromMilliseconds(80);
 
     public PlayerViewModel(
         IMediaEngine engine, IVideoLibrary library, AppPaths paths, PlaybackKeyMap keyMap, TimeProvider? clock = null)
@@ -244,10 +251,14 @@ public sealed partial class PlayerViewModel : ObservableObject
 
         FrameText = _engine.FrameNumber is { } f ? $"f#{f}" : "f#~";
 
-        // 일시정지로 바뀐 순간(엔진이 끝에 도달한 경우 포함)과 재생 중 주기적으로 저장한다.
+        // 일시정지로 바뀐 순간(엔진이 끝에 도달한 경우 포함), 타임라인으로 옮긴 직후,
+        // 재생 중 주기적으로 저장한다.
         var now = _clock.GetUtcNow();
-        if ((wasPlaying && paused) || (!paused && now - _lastPersist >= PersistInterval))
+        if ((wasPlaying && paused) || _persistAfterSeek || (!paused && now - _lastPersist >= PersistInterval))
+        {
+            _persistAfterSeek = false;
             Persist(SaveStateAsync);
+        }
     }
 
     // ── 재생 제어 ────────────────────────────────────────────────────────────
@@ -283,15 +294,49 @@ public sealed partial class PlayerViewModel : ObservableObject
         _engine.SeekRelative(JumpRules.Amount(_engine.Speed) * Math.Sign(direction));
     }
 
-    public void BeginScrub() => IsScrubbing = HasVideo;
+    /// <summary>
+    /// 타임라인을 눌렀다. 누른 곳으로 곧바로 이동한다. (FR-202)
+    /// <para>
+    /// 드래그 중에는 엔진 위치로 타임라인을 덮어쓰지 않는다 — 덮어쓰면 끄는 손 밑에서 썸이 튄다.
+    /// </para>
+    /// </summary>
+    public void BeginScrub(double seconds)
+    {
+        if (!HasVideo) return;
+        IsScrubbing = true;
+        _lastScrubSeek = DateTimeOffset.MinValue;
+        UpdateScrub(seconds);
+    }
 
-    /// <summary>타임라인에서 손을 뗐다. 그때 한 번만 정확 시크한다. (FR-202)</summary>
+    /// <summary>
+    /// 끄는 중. 표시는 즉시 따라가고, 영상은 <see cref="ScrubSeekInterval"/> 마다 따라온다.
+    /// <para>
+    /// 초안(UI-BLUEPRINT §4)은 "놓을 때만 시크" 였으나, 끄는 동안 영상이 멈춰 있으면 원하는
+    /// 장면을 찾을 수 없어 미리보기 시크를 한다.
+    /// </para>
+    /// </summary>
+    public void UpdateScrub(double seconds)
+    {
+        if (!IsScrubbing) return;
+        TimelinePosition = seconds;
+
+        var now = _clock.GetUtcNow();
+        if (now - _lastScrubSeek < ScrubSeekInterval) return;
+        _lastScrubSeek = now;
+        _engine.SeekAbsolute(TimeSpan.FromSeconds(seconds));
+    }
+
+    /// <summary>손을 뗐다. 놓은 위치로 한 번 더 정확히 시크한다 — 마지막 미리보기가 생략됐을 수 있다.</summary>
     public void EndScrub(double seconds)
     {
         if (!IsScrubbing) return;
+        TimelinePosition = seconds;
         IsScrubbing = false;
         if (HasVideo) _engine.SeekAbsolute(TimeSpan.FromSeconds(seconds));
+        _persistAfterSeek = true;
     }
+
+    private bool _persistAfterSeek;
 
     // ── 배속 ─────────────────────────────────────────────────────────────────
 

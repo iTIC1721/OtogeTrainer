@@ -105,4 +105,6 @@ public partial class MainWindow : Window
     // ── 자동 검증용 (--smoketest) ────────────────────────────────────────────
 
     internal VideoSurfaceHost Surface => _surface;
+
+    internal System.Windows.Controls.Slider Timeline => PlayerView.TimelineSlider;
 }

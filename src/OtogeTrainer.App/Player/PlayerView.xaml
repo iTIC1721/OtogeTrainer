@@ -113,12 +113,10 @@
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Right" Text="{Binding DurationText}" Style="{StaticResource MonoText}"
                                FontSize="14" Foreground="{StaticResource Fg1}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                    <!-- 마우스 처리는 코드 비하인드에서 handledEventsToo 로 건다 (PlayerView.xaml.cs 참고) -->
                     <Slider x:Name="Timeline" Style="{StaticResource Timeline}" VerticalAlignment="Center"
                             Minimum="0" Maximum="{Binding TimelineMaximum}"
-                            Value="{Binding TimelinePosition, Mode=TwoWay}"
-                            PreviewMouseLeftButtonDown="OnTimelinePressed"
-                            PreviewMouseLeftButtonUp="OnTimelineReleased"
-                            LostMouseCapture="OnTimelineCaptureLost" />
+                            Value="{Binding TimelinePosition, Mode=OneWay}" />
                 </DockPanel>
 
                 <!-- 1행: 재생 · 탐색 · 배속 -->
