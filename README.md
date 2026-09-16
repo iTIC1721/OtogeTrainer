@@ -3,20 +3,22 @@
 PC 리듬게임(otoge) 플레이어를 위한 **플레이 영상 복기 전용 로컬 영상 뷰어** — Windows 데스크톱 앱.
 
 > **현재 상태: M1(MVP) 구현 완료 · 수동 확인 대기.**
-> P0 요구사항 전부 구현, 종단 자동 검증 74/74 통과. 실제 플레이 영상으로 30분 사용해 보는 확인이 남았습니다. ([M1 진행 기록](docs/M1-PROGRESS.md))
+> P0 요구사항 전부 구현, 종단 자동 검증 74/74 통과. 실제 플레이 영상으로 30분 사용해 보는 확인이 남았습니다. ([M1 진행 기록](../docs/M1-PROGRESS.md))
 
 ## 문서
 
+기획 · 진행 문서는 저장소 밖(상위 폴더)에 둔다. 아래 링크는 로컬 폴더 구조 `OtogeTrainer\{SPEC.md, docs\, app\}` 기준이다.
+
 | 문서 | 내용 |
 |---|---|
-| [SPEC.md](SPEC.md) | 제품 명세서 — 목표, 기술 스택 결정, 기능 요구사항(FR), 비기능 요구사항, 데이터 모델, 아키텍처 |
-| [docs/UI-BLUEPRINT.md](docs/UI-BLUEPRINT.md) | UI 청사진 — 화면 흐름, 와이어프레임, 인터랙션 규칙, 키/마우스 매핑, 비주얼 가이드 |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | 마일스톤, 검증 계획, 리스크 레지스터, 배포·라이선스 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 결정 기록 — 확정된 설계 결정과 그 근거 |
-| [docs/M0-FINDINGS.md](docs/M0-FINDINGS.md) | M0 스파이크 결과 — 측정치와 스택 확정 근거 |
-| [docs/M1-PROGRESS.md](docs/M1-PROGRESS.md) | M1 진행 기록 — 구현 범위, 검증 결과, 발견한 결함, 남은 확인 |
-| [docs/M2-PROGRESS.md](docs/M2-PROGRESS.md) | **M2 진행 기록** — 전체화면, 폴더 · 검색 · 태그, 볼륨 |
-| [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) | 서드파티 구성요소와 라이선스 |
+| [SPEC.md](../SPEC.md) | 제품 명세서 — 목표, 기술 스택 결정, 기능 요구사항(FR), 비기능 요구사항, 데이터 모델, 아키텍처 |
+| [docs/UI-BLUEPRINT.md](../docs/UI-BLUEPRINT.md) | UI 청사진 — 화면 흐름, 와이어프레임, 인터랙션 규칙, 키/마우스 매핑, 비주얼 가이드 |
+| [docs/ROADMAP.md](../docs/ROADMAP.md) | 마일스톤, 검증 계획, 리스크 레지스터, 배포·라이선스 |
+| [docs/DECISIONS.md](../docs/DECISIONS.md) | 결정 기록 — 확정된 설계 결정과 그 근거 |
+| [docs/M0-FINDINGS.md](../docs/M0-FINDINGS.md) | M0 스파이크 결과 — 측정치와 스택 확정 근거 |
+| [docs/M1-PROGRESS.md](../docs/M1-PROGRESS.md) | M1 진행 기록 — 구현 범위, 검증 결과, 발견한 결함, 남은 확인 |
+| [docs/M2-PROGRESS.md](../docs/M2-PROGRESS.md) | **M2 진행 기록** — 전체화면, 폴더 · 검색 · 태그, 볼륨 |
+| [docs/THIRD-PARTY.md](../docs/THIRD-PARTY.md) | 서드파티 구성요소와 라이선스 |
 
 ## 한 줄 요약
 

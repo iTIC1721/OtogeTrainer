@@ -13,7 +13,7 @@ x86/
 artifacts/
 
 # ---- 네이티브 런타임 (저장소에 넣지 않는다) ----
-# libmpv / ffmpeg 등은 각자 로컬에 배치. docs/M0-FINDINGS.md 의 배치 안내 참조.
+# libmpv / ffmpeg 등은 각자 로컬에 배치. ../docs/M0-FINDINGS.md 의 배치 안내 참조.
 runtimes/
 native/
 *.dll
