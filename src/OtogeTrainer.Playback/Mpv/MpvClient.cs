@@ -240,6 +240,19 @@ public sealed class MpvClient : IDisposable
         set { var v = value; SetPropertyDouble("audio-delay", ref v); }
     }
 
+    /// <summary>볼륨 0~100 (mpv 는 volume-max 까지 증폭도 되지만 쓰지 않는다). (FR-206)</summary>
+    public double Volume
+    {
+        get => GetDouble("volume") ?? 100.0;
+        set { var v = value; SetPropertyDouble("volume", ref v); }
+    }
+
+    public bool Mute
+    {
+        get => GetFlag("mute");
+        set => SetProperty("mute", value ? "yes" : "no");
+    }
+
     public bool PitchCorrection
     {
         get => GetFlag("audio-pitch-correction");

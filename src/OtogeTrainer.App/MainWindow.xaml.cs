@@ -218,4 +218,6 @@ public partial class MainWindow : Window
     internal System.Windows.Controls.Slider Timeline => PlayerView.TimelineSlider;
 
     internal FloatingControlsWindow? FloatingControls => _floating;
+
+    internal System.Windows.Controls.Slider VolumeSlider => PlayerView.VolumeSliderControl;
 }

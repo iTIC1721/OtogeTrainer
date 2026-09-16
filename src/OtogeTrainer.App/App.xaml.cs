@@ -64,13 +64,15 @@ public partial class App : Application
         }
 
         var settingsStore = new SettingsStore(_paths.SettingsPath);
-        var keyMap = settingsStore.LoadKeyMap(out var settingsError);
+        var loadedSettings = settingsStore.Load(out var settingsError);
+        var keyMap = loadedSettings.KeyMap;
 
         var library = new SqliteVideoLibrary(db);
         var surface = new VideoSurfaceHost();
         _engine = new MpvMediaEngine(surface);
 
         var player = new PlayerViewModel(_engine, library, _paths, keyMap);
+        player.RestoreAudio(loadedSettings.Volume, loadedSettings.Muted);
         var shell = new ShellViewModel(new LibraryViewModel(library, _paths), player, library, keyMap, settingsStore);
         if (settingsError is not null) shell.Notice = settingsError;
         var window = new MainWindow(shell, surface);

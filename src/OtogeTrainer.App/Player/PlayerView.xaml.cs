@@ -36,6 +36,8 @@ public partial class PlayerView : UserControl
 
     internal Slider TimelineSlider => Timeline;
 
+    internal Slider VolumeSliderControl => VolumeSlider;
+
     // ── 전체화면 떠 있는 컨트롤 ──────────────────────────────────────────────
 
     private Brush? _dockedBackground;

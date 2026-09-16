@@ -150,6 +150,18 @@ public sealed class MpvMediaEngine : IMediaEngine
         set => _mpv.AudioDelay = OffsetRules.Clamp(value) / 1000.0;
     }
 
+    public int Volume
+    {
+        get => (int)Math.Round(_mpv.Volume);
+        set => _mpv.Volume = VolumeRules.Clamp(value);
+    }
+
+    public bool IsMuted
+    {
+        get => _mpv.Mute;
+        set => _mpv.Mute = value;
+    }
+
     public void SeekAbsolute(TimeSpan position)
     {
         if (position < TimeSpan.Zero) position = TimeSpan.Zero;

@@ -18,6 +18,9 @@ public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly IVideoLibrary _library;
     private readonly SettingsStore _settings;
+    private readonly System.Windows.Threading.DispatcherTimer _audioSaveDelay;
+
+    public static readonly TimeSpan AudioSaveDelay = TimeSpan.FromMilliseconds(400);
 
     public ShellViewModel(
         LibraryViewModel library, PlayerViewModel player, IVideoLibrary videoLibrary,
@@ -30,13 +33,15 @@ public sealed partial class ShellViewModel : ObservableObject
         _settings = settings;
 
         // 설정 창에서 키를 바꾸면 즉시 저장한다.
-        KeyMap.Changed += (_, _) =>
+        KeyMap.Changed += (_, _) => SaveSettings();
+
+        // 볼륨은 슬라이더를 끄는 동안 계속 바뀌므로 멈춘 뒤 한 번만 쓴다.
+        _audioSaveDelay = new System.Windows.Threading.DispatcherTimer { Interval = AudioSaveDelay };
+        _audioSaveDelay.Tick += (_, _) => SaveSettings();
+        Player.AudioSettingsChanged += (_, _) =>
         {
-            try { _settings.Save(KeyMap); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                Notice = $"설정을 저장하지 못했습니다: {ex.Message}";
-            }
+            _audioSaveDelay.Stop();
+            _audioSaveDelay.Start();
         };
 
         Library.OpenPath = OpenPathAsync;
@@ -189,6 +194,20 @@ public sealed partial class ShellViewModel : ObservableObject
         return IsPlayerScreen && Player.HandleShortcut(ctx);
     }
 
-    /// <summary>앱 종료 직전. 위치와 썸네일을 남긴다.</summary>
-    public Task ShutdownAsync() => IsPlayerScreen ? Player.CloseAsync() : Task.CompletedTask;
+    private void SaveSettings()
+    {
+        _audioSaveDelay.Stop();
+        try { _settings.Save(KeyMap, Player.Volume, Player.IsMuted); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Notice = $"설정을 저장하지 못했습니다: {ex.Message}";
+        }
+    }
+
+    /// <summary>앱 종료 직전. 위치와 썸네일, 아직 쓰지 않은 볼륨 설정을 남긴다.</summary>
+    public Task ShutdownAsync()
+    {
+        if (_audioSaveDelay.IsEnabled) SaveSettings();
+        return IsPlayerScreen ? Player.CloseAsync() : Task.CompletedTask;
+    }
 }

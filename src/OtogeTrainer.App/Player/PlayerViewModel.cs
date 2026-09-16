@@ -178,6 +178,7 @@ public sealed partial class PlayerViewModel : ObservableObject
             if (generation != _openGeneration) return;   // 그사이 다른 영상을 열었다
 
             _engine.Speed = record.LastSpeed ?? SpeedRules.Default;
+            ApplyAudio();
             _engine.AudioDelayMs = FolderRules.EffectiveOffset(record.AvOffsetMs, inheritedOffsetMs);
 
             var duration = _engine.Duration;
@@ -373,6 +374,75 @@ public sealed partial class PlayerViewModel : ObservableObject
         Persist(SaveStateAsync);
     }
 
+    // ── 볼륨 · 음소거 (FR-206) ───────────────────────────────────────────────
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VolumeIcon))]
+    private int _volume = VolumeRules.Default;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VolumeIcon))]
+    private bool _isMuted;
+
+    private bool _restoringAudio;
+
+    public string VolumeIcon => IsMuted || Volume == 0 ? "🔇" : Volume < 50 ? "🔉" : "🔊";
+
+    /// <summary>사용자가 볼륨이나 음소거를 바꿨다. 셸이 설정 파일에 저장한다.</summary>
+    public event EventHandler? AudioSettingsChanged;
+
+    /// <summary>앱 시작 시 저장된 값으로. 저장 이벤트를 내지 않는다.</summary>
+    public void RestoreAudio(int volume, bool muted)
+    {
+        _restoringAudio = true;
+        try
+        {
+            Volume = volume;
+            IsMuted = muted;
+        }
+        finally
+        {
+            _restoringAudio = false;
+        }
+        ApplyAudio();
+    }
+
+    partial void OnVolumeChanged(int value)
+    {
+        var clamped = VolumeRules.Clamp(value);
+        if (clamped != value)
+        {
+            Volume = clamped;
+            return;
+        }
+
+        // 음소거 중에 볼륨을 만지면 소리를 듣고 싶다는 뜻이다
+        if (!_restoringAudio && IsMuted && value > 0) IsMuted = false;
+        OnAudioChanged();
+    }
+
+    partial void OnIsMutedChanged(bool value) => OnAudioChanged();
+
+    private void OnAudioChanged()
+    {
+        ApplyAudio();
+        if (!_restoringAudio) AudioSettingsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>엔진이 아직 준비 전이면 영상을 열 때(<see cref="OpenAsync"/>) 적용된다.</summary>
+    private void ApplyAudio()
+    {
+        if (!_engine.IsReady) return;
+        _engine.Volume = Volume;
+        _engine.IsMuted = IsMuted;
+    }
+
+    [RelayCommand]
+    public void ToggleMute() => IsMuted = !IsMuted;
+
+    [RelayCommand]
+    public void VolumeStep(int direction) => Volume = VolumeRules.Clamp(Volume + Math.Sign(direction) * VolumeRules.Step);
+
     // ── 오프셋 ───────────────────────────────────────────────────────────────
 
     [RelayCommand]
@@ -528,6 +598,9 @@ public sealed partial class PlayerViewModel : ObservableObject
             case Key.OemOpenBrackets: AdjustOffset(ctrl ? -OffsetRules.FineStepMs : -OffsetRules.StepMs); return true;
             case Key.OemCloseBrackets: AdjustOffset(ctrl ? OffsetRules.FineStepMs : OffsetRules.StepMs); return true;
             case Key.D0 when ctrl && shift: ResetOffset(); return true;
+            case Key.M when !ctrl && !shift: ToggleMute(); return true;
+            case Key.OemPlus or Key.Add when !ctrl: VolumeStep(+1); return true;
+            case Key.OemMinus or Key.Subtract when !ctrl: VolumeStep(-1); return true;
             default: return false;
         }
     }

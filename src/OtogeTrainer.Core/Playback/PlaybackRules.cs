@@ -62,6 +62,20 @@ public static class OffsetRules
     public static double ToFrames(int ms, double fps) => fps > 0 ? ms * fps / 1000.0 : 0;
 }
 
+/// <summary>볼륨 규칙. (FR-206)</summary>
+public static class VolumeRules
+{
+    public const int Min = 0;
+
+    /// <summary>100 = 원본 음량. 증폭은 하지 않는다 — 녹화 음량 비교가 흐려진다.</summary>
+    public const int Max = 100;
+
+    public const int Default = 100;
+    public const int Step = 5;
+
+    public static int Clamp(int volume) => Math.Clamp(volume, Min, Max);
+}
+
 /// <summary>북마크 슬롯 규칙. (FR-321 / D-5)</summary>
 public static class BookmarkSlots
 {

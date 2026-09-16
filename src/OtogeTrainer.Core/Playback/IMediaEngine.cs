@@ -39,6 +39,11 @@ public interface IMediaEngine : IDisposable
     /// <summary>오디오 지연(ms). 양수 = 소리를 늦춤. (FR-402)</summary>
     int AudioDelayMs { get; set; }
 
+    /// <summary>볼륨 0~100. 설정 시 <see cref="VolumeRules.Clamp"/> 가 적용된다. 파일을 바꿔 열어도 유지된다. (FR-206)</summary>
+    int Volume { get; set; }
+
+    bool IsMuted { get; set; }
+
     /// <summary>프레임 정확 절대 시크. (FR-306)</summary>
     void SeekAbsolute(TimeSpan position);
 

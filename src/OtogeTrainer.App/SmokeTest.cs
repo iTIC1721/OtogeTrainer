@@ -387,14 +387,14 @@ internal static class SmokeTest
             await WaitUntil(() => !player.IsPlaying);
             Check(!player.IsPlaying, "새 키 F1 로 일시정지");
 
-            var reloaded = new Settings.SettingsStore(paths.SettingsPath).LoadKeyMap(out var settingsError);
+            var reloaded = new Settings.SettingsStore(paths.SettingsPath).Load(out var settingsError).KeyMap;
             Check(settingsError is null
                   && reloaded[Input.PlaybackAction.TogglePlay] == Key.F1
                   && reloaded[Input.PlaybackAction.JumpBack] == Key.P,
                   "settings.json 에 저장되어 다시 읽힘", settingsError ?? "");
 
             shell.KeyMap.ResetToDefaults();
-            reloaded = new Settings.SettingsStore(paths.SettingsPath).LoadKeyMap(out _);
+            reloaded = new Settings.SettingsStore(paths.SettingsPath).Load(out _).KeyMap;
             Check(reloaded[Input.PlaybackAction.TogglePlay] == Key.F5, "기본값으로 되돌리기도 저장됨");
 
             await SeekAndSettle(32.5);
@@ -556,6 +556,45 @@ internal static class SmokeTest
             Check(shell.IsFullscreen && !player.IsPlaying, "ESC 는 일시정지만 (전체화면 유지, D-3)");
             await WaitUntil(() => window.FloatingControls is { IsVisible: true });
             Check(window.FloatingControls is { IsVisible: true }, "일시정지하면 바가 뜸");
+
+            // ── 5-6. 볼륨 · 음소거 (FR-206) ─────────────────────────────────
+            Emit("");
+            Emit("5-6. 볼륨 · 음소거 (FR-206)");
+            Check(engine.Volume == 100 && !engine.IsMuted && player.VolumeIcon == "🔊",
+                  "기본 100 · 소리 켬", $"{engine.Volume} · 음소거 {engine.IsMuted}");
+
+            window.VolumeSlider.Value = 40;   // 떠 있는 바 안의 슬라이더 (전체화면)
+            Check(player.Volume == 40 && engine.Volume == 40 && player.VolumeIcon == "🔉",
+                  "슬라이더 40 → 엔진 40", $"{engine.Volume}");
+
+            await Press(Key.OemMinus);
+            Check(engine.Volume == 35, "일시정지 중 − → 35", $"{engine.Volume}");
+            await Press(Key.Add);
+            Check(engine.Volume == 40 && Math.Abs(window.VolumeSlider.Value - 40) < 0.01,
+                  "일시정지 중 숫자패드 + → 40, 슬라이더도 따라옴", $"{engine.Volume} · {window.VolumeSlider.Value}");
+
+            await Press(Key.M);
+            Check(engine.IsMuted && player.VolumeIcon == "🔇", "일시정지 중 M → 음소거", $"{engine.IsMuted}");
+
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Press(Key.M);
+            await Press(Key.OemPlus);
+            Check(engine.IsMuted && engine.Volume == 40 && player.IsPlaying,
+                  "재생 중 M · + 는 무시 (D-4)", $"음소거 {engine.IsMuted} · {engine.Volume}");
+            await Press(Key.Escape);
+            await WaitUntil(() => !player.IsPlaying);
+
+            player.VolumeStep(+1);
+            Check(!engine.IsMuted && engine.Volume == 45, "음소거 중 볼륨을 올리면 소리가 켜짐",
+                  $"음소거 {engine.IsMuted} · {engine.Volume}");
+
+            player.Volume = 60;
+            player.ToggleMuteCommand.Execute(null);
+            await Task.Delay(ShellViewModel.AudioSaveDelay + TimeSpan.FromMilliseconds(400));
+            var savedAudio = new Settings.SettingsStore(paths.SettingsPath).Load(out _);
+            Check(savedAudio.Volume == 60 && savedAudio.Muted, "설정 파일에 저장 (60 · 음소거)",
+                  $"{savedAudio.Volume} · {savedAudio.Muted}");
             await SeekAndSettle(32.5);
 
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────
@@ -588,6 +627,8 @@ internal static class SmokeTest
                   $"{Timecode.Format(leftAt)} → {Timecode.Format(engine.Position)}");
             Check(engine.Speed == 0.5 && player.Speed == 0.5, "배속 복원");
             Check(engine.AudioDelayMs == 33 && player.OffsetMs == 33, "오프셋 복원");
+            Check(engine.Volume == 60 && engine.IsMuted, "볼륨 · 음소거는 다른 영상을 열어도 유지",
+                  $"{engine.Volume} · 음소거 {engine.IsMuted}");
             Check(player.Slots[0].PositionMs == 12_000 && player.Slots[2].PositionMs == 30_000, "북마크 복원");
             Check(player.IsPaused, "복원 후 일시정지 상태");
             await Task.Delay(300);

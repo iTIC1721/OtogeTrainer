@@ -156,3 +156,19 @@ public class BookmarkNavigationTests
         Assert.Null(BookmarkNavigation.Next([], 0));
     }
 }
+
+public class VolumeRulesTests
+{
+    [Theory]
+    [InlineData(-10, 0)]
+    [InlineData(0, 0)]
+    [InlineData(55, 55)]
+    [InlineData(100, 100)]
+    [InlineData(130, 100)]   // 증폭하지 않는다
+    public void 범위로_자른다(int input, int expected)
+        => Assert.Equal(expected, VolumeRules.Clamp(input));
+
+    [Fact]
+    public void 기본은_원본_음량()
+        => Assert.Equal(VolumeRules.Max, VolumeRules.Default);
+}

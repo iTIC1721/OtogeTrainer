@@ -274,13 +274,38 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- 볼륨 · 음소거 (FR-206). 재생 중에는 단축키가 막히므로 반드시 바에 노출한다 (D-4) -->
+                    <Border Style="{StaticResource Divider}" />
+                    <Button Style="{StaticResource ControlButton}" Command="{Binding ToggleMuteCommand}"
+                            ToolTip="음소거 (일시정지 중 M)">
+                        <TextBlock Text="{Binding VolumeIcon}" />
+                    </Button>
+                    <Slider x:Name="VolumeSlider" Style="{StaticResource Timeline}" Width="110" VerticalAlignment="Center"
+                            Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
+                            IsSnapToTickEnabled="True" TickFrequency="1"
+                            Value="{Binding Volume, Mode=TwoWay}"
+                            ToolTip="볼륨 (일시정지 중 + / −)" />
+                    <TextBlock Text="{Binding Volume}" FontSize="13" MinWidth="30"
+                               Margin="8,0,0,0" VerticalAlignment="Center" TextAlignment="Right">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMuted}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource Fg2}" />
+                                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </WrapPanel>
 
                 <StackPanel Margin="0,10,0,0">
                     <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
                                Foreground="{StaticResource Warn}" Text="{Binding PlaybackKeysHint}" />
                     <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap" Margin="0,2,0,0"
-                               Text="일시정지 중:  Space · ←/→ · ,/. · ↑/↓ · [ ] · 1~5 (Ctrl 저장 · Shift 비우기) · Alt+← 라이브러리      영상 위 마우스 조작은 없습니다" />
+                               Text="일시정지 중:  Space · ←/→ · ,/. · ↑/↓ · [ ] · 1~5 (Ctrl 저장 · Shift 비우기) · M 음소거 · +/− 볼륨 · Alt+← 라이브러리      영상 위 마우스 조작은 없습니다" />
                 </StackPanel>
             </StackPanel>
         </Border>
