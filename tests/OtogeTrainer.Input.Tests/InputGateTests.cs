@@ -186,7 +186,7 @@ public class InputGateTests
             .ToArray();
 
         Assert.Equal(
-            new[] { Key.Escape, Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6, Key.F7 }.OrderBy(k => k),
+            new[] { Key.Escape, Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6, Key.F7, Key.F11 }.OrderBy(k => k),
             passed);
     }
 

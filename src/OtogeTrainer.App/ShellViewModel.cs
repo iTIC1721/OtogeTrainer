@@ -57,6 +57,12 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>화면 상단 알림 배너. 오류와 안내를 겸한다.</summary>
     [ObservableProperty] private string? _notice;
 
+    /// <summary>
+    /// 전체화면. 플레이어 화면에서만 의미가 있고, 라이브러리로 돌아가면 풀린다. (FR-207)
+    /// 창 모양은 MainWindow 가 이 값을 보고 바꾼다.
+    /// </summary>
+    [ObservableProperty] private bool _isFullscreen;
+
     public bool IsLibraryScreen => Screen == Screen.Library;
     public bool IsPlayerScreen => Screen == Screen.Player;
 
@@ -105,6 +111,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         if (!IsPlayerScreen) return;
         await Player.CloseAsync();
+        IsFullscreen = false;
         Screen = Screen.Library;
         await Library.RefreshAsync();
     }
@@ -129,7 +136,21 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>재생 중 동작 키. 플레이어 화면에서만 의미가 있다.</summary>
     public void HandlePlaybackAction(PlaybackAction action, bool isRepeat)
     {
-        if (IsPlayerScreen) Player.ExecuteAction(action, isRepeat);
+        if (!IsPlayerScreen) return;
+
+        if (action == PlaybackAction.ToggleFullscreen)
+        {
+            if (!isRepeat) ToggleFullscreen();   // 누르고 있어도 한 번만
+            return;
+        }
+
+        Player.ExecuteAction(action, isRepeat);
+    }
+
+    [RelayCommand]
+    private void ToggleFullscreen()
+    {
+        if (IsPlayerScreen) IsFullscreen = !IsFullscreen;
     }
 
     /// <summary>입력 가드에서 온 키. 일시정지 상태에서만 도달한다.</summary>

@@ -68,7 +68,7 @@
         <DockPanel Margin="0,18,0,0">
             <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="닫기" MinWidth="88"
                     Click="OnClose" />
-            <Button DockPanel.Dock="Left" Content="모두 기본값으로 (F1 ~ F7)" HorizontalAlignment="Left"
+            <Button DockPanel.Dock="Left" Content="모두 기본값으로" HorizontalAlignment="Left"
                     Command="{Binding ResetAllCommand}" />
         </DockPanel>
 

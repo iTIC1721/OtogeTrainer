@@ -12,6 +12,7 @@
 
     <UserControl.Resources>
         <app:HasValueToVisibilityConverter x:Key="HasValue" />
+        <app:InverseBoolToVisibilityConverter x:Key="InverseBool" />
 
         <!-- RelayCommand<int> 는 문자열 인자를 받지 않는다. 숫자는 타입이 있는 리소스로 넘긴다. -->
         <sys:Int32 x:Key="Back">-1</sys:Int32>
@@ -45,7 +46,9 @@
         </Grid.RowDefinitions>
 
         <!-- ── 상단 바: 복귀 · 제목 · 상태 배지 (FR-505 / FR-511) ─────────── -->
-        <DockPanel Grid.Row="0" Margin="12,8">
+        <!-- 전체화면에서는 상단 바를 숨긴다. 재생 상태는 영상 테두리와 하단 안내로 보인다. -->
+        <DockPanel Grid.Row="0" Margin="12,8"
+                   Visibility="{Binding DataContext.IsFullscreen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBool}}">
             <Button DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="◀  라이브러리"
                     Command="{Binding BackCommand}" ToolTip="라이브러리로 돌아가기 (일시정지 중 Alt+←)" />
 
@@ -88,11 +91,15 @@
         </DockPanel>
 
         <!-- ── 영상. 재생 중에는 테두리가 앰버로 바뀐다 (UI-BLUEPRINT §5) ──── -->
-        <Border Grid.Row="1" x:Name="VideoFrame" Background="Black" BorderThickness="2" Margin="12,0">
+        <Border Grid.Row="1" x:Name="VideoFrame" Background="Black" BorderThickness="2">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="BorderBrush" Value="{StaticResource Bg1}" />
+                    <Setter Property="Margin" Value="12,0" />
                     <Style.Triggers>
+                        <DataTrigger Binding="{Binding DataContext.IsFullscreen, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                            <Setter Property="Margin" Value="0" />
+                        </DataTrigger>
                         <DataTrigger Binding="{Binding IsPlaying}" Value="True">
                             <Setter Property="BorderBrush" Value="#99FFB454" />
                         </DataTrigger>
@@ -172,6 +179,25 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <Border Style="{StaticResource Divider}" />
+
+                    <Button Style="{StaticResource ControlButton}" MinWidth="104"
+                            Command="{Binding DataContext.ToggleFullscreenCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            ToolTip="전체화면 전환 — 재생 중에도 동작 (설정의 재생 중 동작 키)">
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="⛶  전체화면" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DataContext.IsFullscreen, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                            <Setter Property="Text" Value="⛶  창 모드" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
                 </WrapPanel>
 
                 <!-- 2행: 오프셋 · 북마크 -->

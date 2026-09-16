@@ -7,7 +7,7 @@ namespace OtogeTrainer.Input.Tests;
 public class PlaybackKeyMapTests
 {
     [Fact]
-    public void 기본_배치는_중복이_없고_F10_F11_F12는_쓰지_않는다()
+    public void 기본_배치는_중복이_없고_F10_F12는_쓰지_않는다()
     {
         var map = new PlaybackKeyMap();
         var keys = Enum.GetValues<PlaybackAction>().Select(a => map[a]).ToArray();
@@ -15,8 +15,31 @@ public class PlaybackKeyMapTests
         Assert.All(keys, k => Assert.NotNull(k));
         Assert.Equal(keys.Length, keys.Distinct().Count());
         Assert.DoesNotContain(Key.F10, keys.Select(k => k!.Value));
-        Assert.DoesNotContain(Key.F11, keys.Select(k => k!.Value));
         Assert.DoesNotContain(Key.F12, keys.Select(k => k!.Value));
+    }
+
+    [Fact]
+    public void 전체화면은_관례대로_F11()
+        => Assert.Equal(Key.F11, new PlaybackKeyMap()[PlaybackAction.ToggleFullscreen]);
+
+    [Fact]
+    public void 전체화면_항목이_없던_옛_설정_파일도_F11을_받는다()
+    {
+        // 전체화면이 추가되기 전에 저장된 파일에는 이 항목이 없다
+        var old = new PlaybackKeyMap().ToSerializable();
+        old.Remove(nameof(PlaybackAction.ToggleFullscreen));
+
+        Assert.Equal(Key.F11, PlaybackKeyMap.FromSerializable(old)[PlaybackAction.ToggleFullscreen]);
+    }
+
+    [Fact]
+    public void 옛_설정에서_F11을_다른_동작에_썼다면_전체화면은_해제된다()
+    {
+        var old = new Dictionary<string, string> { [nameof(PlaybackAction.TogglePlay)] = "F11" };
+        var map = PlaybackKeyMap.FromSerializable(old);
+
+        Assert.Equal(Key.F11, map[PlaybackAction.TogglePlay]);
+        Assert.Null(map[PlaybackAction.ToggleFullscreen]);
     }
 
     [Fact]

@@ -78,6 +78,7 @@ public static class KeyText
         PlaybackAction.FrameForward => "프레임 앞으로",
         PlaybackAction.PreviousBookmark => "이전 북마크",
         PlaybackAction.NextBookmark => "다음 북마크",
+        PlaybackAction.ToggleFullscreen => "전체화면",
         _ => action.ToString(),
     };
 
@@ -87,6 +88,7 @@ public static class KeyText
         PlaybackAction.JumpBack or PlaybackAction.JumpForward => "5초 × 현재 배속",
         PlaybackAction.FrameBack or PlaybackAction.FrameForward => "누르고 있으면 계속 이동 · 누르면 일시정지",
         PlaybackAction.PreviousBookmark or PlaybackAction.NextBookmark => "슬롯 번호가 아니라 시간 순",
+        PlaybackAction.ToggleFullscreen => "재생은 그대로 이어집니다",
         _ => "",
     };
 
@@ -95,5 +97,6 @@ public static class KeyText
     [
         PlaybackAction.JumpBack, PlaybackAction.FrameBack, PlaybackAction.FrameForward, PlaybackAction.JumpForward,
         PlaybackAction.TogglePlay, PlaybackAction.PreviousBookmark, PlaybackAction.NextBookmark,
+        PlaybackAction.ToggleFullscreen,
     ];
 }

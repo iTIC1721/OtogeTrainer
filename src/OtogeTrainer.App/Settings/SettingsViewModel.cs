@@ -95,7 +95,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         Capturing = null;
         _map.ResetToDefaults();
         Refresh();
-        Notice = "기본 배치(F1 ~ F7)로 되돌렸습니다.";
+        Notice = "기본 배치(F1 ~ F7 · F11)로 되돌렸습니다.";
     }
 
     private void Refresh()

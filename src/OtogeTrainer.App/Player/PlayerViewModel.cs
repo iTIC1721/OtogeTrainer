@@ -457,7 +457,8 @@ public sealed partial class PlayerViewModel : ObservableObject
             return $"재생 중:  ESC 일시정지 · {K(PlaybackAction.TogglePlay)} 재생/일시정지 · "
                  + $"{K(PlaybackAction.JumpBack)} / {K(PlaybackAction.JumpForward)} 점프 · "
                  + $"{K(PlaybackAction.FrameBack)} / {K(PlaybackAction.FrameForward)} 프레임 · "
-                 + $"{K(PlaybackAction.PreviousBookmark)} / {K(PlaybackAction.NextBookmark)} 북마크";
+                 + $"{K(PlaybackAction.PreviousBookmark)} / {K(PlaybackAction.NextBookmark)} 북마크 · "
+                 + $"{K(PlaybackAction.ToggleFullscreen)} 전체화면";
         }
     }
 

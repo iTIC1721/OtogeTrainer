@@ -18,6 +18,9 @@ public enum PlaybackAction
     FrameForward,
     PreviousBookmark,
     NextBookmark,
+
+    /// <summary>전체화면 전환. 재생을 방해하지 않으므로 재생 중에도 동작한다.</summary>
+    ToggleFullscreen,
 }
 
 /// <summary>
@@ -27,8 +30,8 @@ public sealed class PlaybackKeyMap
 {
     /// <summary>
     /// 기본 배치. 리듬게임이 거의 쓰지 않는 F키 중에서 고르되,
-    /// F10(Alt 와 같은 시스템 메뉴 키) · F11(전체화면 예정) · F12(Windows 가 디버거용으로 예약)는 피한다.
-    /// F1~F4 는 왼쪽에서 오른쪽으로 갈수록 시간이 앞으로 간다.
+    /// F10(Alt 와 같은 시스템 메뉴 키) · F12(Windows 가 디버거용으로 예약)는 피한다.
+    /// F1~F4 는 왼쪽에서 오른쪽으로 갈수록 시간이 앞으로 간다. F11 은 관례대로 전체화면.
     /// </summary>
     public static readonly IReadOnlyDictionary<PlaybackAction, Key> Defaults = new Dictionary<PlaybackAction, Key>
     {
@@ -39,6 +42,7 @@ public sealed class PlaybackKeyMap
         [PlaybackAction.TogglePlay] = Key.F5,
         [PlaybackAction.PreviousBookmark] = Key.F6,
         [PlaybackAction.NextBookmark] = Key.F7,
+        [PlaybackAction.ToggleFullscreen] = Key.F11,
     };
 
     private readonly Dictionary<PlaybackAction, Key?> _map = [];

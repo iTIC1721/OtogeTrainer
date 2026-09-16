@@ -439,6 +439,40 @@ internal static class SmokeTest
             SetCursorPos(cursorBefore.X, cursorBefore.Y);   // 사용자 커서를 원래 자리로
             await SeekAndSettle(32.5);
 
+            // ── 5-5. 전체화면 (FR-207) ──────────────────────────────────────
+            Emit("");
+            Emit("5-5. 전체화면 (FR-207)");
+            var windowedWidth = window.ActualWidth;
+            var windowedSurface = window.Surface.ActualWidth;
+
+            shell.ToggleFullscreenCommand.Execute(null);
+            await Task.Delay(700);
+            var workArea = SystemParameters.PrimaryScreenWidth;
+            Check(window.WindowStyle == WindowStyle.None && window.WindowState == WindowState.Maximized,
+                  "버튼 → 테두리 없는 최대화", $"{window.WindowStyle} · {window.WindowState}");
+            Check(window.Surface.ActualWidth > windowedSurface + 20,
+                  "영상이 커짐", $"{windowedSurface:0} → {window.Surface.ActualWidth:0} (화면 {workArea:0})");
+            Check(Keyboard.FocusedElement is Window, "전환 후에도 포커스가 창에 있음",
+                  Keyboard.FocusedElement?.GetType().Name ?? "null");
+            await Task.Delay(300);
+            Capture(window, "m1-fullscreen.png");
+
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            await Press(Key.F11);
+            await Task.Delay(700);
+            Check(!shell.IsFullscreen && window.WindowStyle != WindowStyle.None && player.IsPlaying,
+                  "재생 중 F11 → 창 모드로, 재생은 계속", $"{window.WindowStyle} · 재생 {player.IsPlaying}");
+            Check(Math.Abs(window.ActualWidth - windowedWidth) < 2,
+                  "창 크기가 원래대로", $"{windowedWidth:0} → {window.ActualWidth:0}");
+            await Press(Key.F11);
+            await Task.Delay(700);
+            Check(shell.IsFullscreen && player.IsPlaying, "재생 중 F11 → 다시 전체화면");
+            await Press(Key.Escape);
+            await WaitUntil(() => !player.IsPlaying);
+            Check(shell.IsFullscreen && !player.IsPlaying, "ESC 는 일시정지만 (전체화면 유지, D-3)");
+            await SeekAndSettle(32.5);
+
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────
             Emit("");
             Emit("6. 라이브러리 복귀 · 최근 목록 (FR-511 / FR-102)");
@@ -446,6 +480,9 @@ internal static class SmokeTest
             await shell.BackToLibraryAsync();
 
             Check(shell.IsLibraryScreen, "라이브러리 화면으로 전환");
+            await Task.Delay(500);
+            Check(!shell.IsFullscreen && window.WindowStyle != WindowStyle.None,
+                  "전체화면에서 복귀하면 창 모드로", $"{window.WindowStyle}");
             var recent = shell.Library.Recent.FirstOrDefault();
             Check(shell.Library.Recent.Count == 1, "최근 목록 1건", $"{shell.Library.Recent.Count}");
             Check(recent?.BookmarkText == "🔖2", "북마크 2개 표시", recent?.BookmarkText ?? "");

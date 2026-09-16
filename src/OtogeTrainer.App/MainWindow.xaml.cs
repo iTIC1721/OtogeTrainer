@@ -15,6 +15,11 @@ public partial class MainWindow : Window
     private readonly WindowInputGuard _guard;
     private bool _shutdownSaved;
 
+    // 전체화면 들어가기 직전의 창 모양. 나올 때 되돌린다.
+    private WindowState _restoreState;
+    private WindowStyle _restoreStyle;
+    private ResizeMode _restoreResize;
+
     public MainWindow(ShellViewModel shell, VideoSurfaceHost surface)
     {
         InitializeComponent();
@@ -54,6 +59,44 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName is nameof(PlayerViewModel.IsPlaying) or nameof(ShellViewModel.Screen))
             ApplyGuard();
+
+        if (e.PropertyName == nameof(ShellViewModel.IsFullscreen))
+            ApplyFullscreen(_shell.IsFullscreen);
+    }
+
+    /// <summary>
+    /// 테두리 없는 최대화로 작업 표시줄까지 덮는다. (FR-207)
+    /// <para>
+    /// 이미 최대화된 창에서 테두리만 없애면 작업 표시줄을 덮지 않는다 — WPF 는 최대화할 때의
+    /// 창 스타일로 크기를 정하기 때문. 그래서 한 번 Normal 로 돌렸다가 다시 최대화한다.
+    /// </para>
+    /// </summary>
+    private void ApplyFullscreen(bool on)
+    {
+        var isOn = WindowStyle == WindowStyle.None && WindowState == WindowState.Maximized;
+        if (on == isOn) return;
+
+        if (on)
+        {
+            _restoreState = WindowState;
+            _restoreStyle = WindowStyle;
+            _restoreResize = ResizeMode;
+
+            WindowState = WindowState.Normal;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            WindowStyle = _restoreStyle;
+            ResizeMode = _restoreResize;
+            WindowState = WindowState.Normal;          // 최대화 크기를 새 스타일로 다시 계산하게
+            WindowState = _restoreState;
+        }
+
+        // 창 모양이 바뀌어도 키 입력은 계속 이 창이 받아야 한다
+        Keyboard.Focus(this);
     }
 
     private void ApplyGuard()
