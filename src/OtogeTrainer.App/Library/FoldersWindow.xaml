@@ -22,7 +22,7 @@
                 <TextBlock Text="녹화 폴더" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
-                       Text="녹화 영상이 저장되는 폴더를 등록하면 앱을 켤 때마다 새 영상을 찾아 라이브러리에 올립니다 (하위 폴더 포함)." />
+                       Text="녹화 영상이 저장되는 폴더를 등록하면 앱을 켤 때마다 새 영상을 찾아 라이브러리에 올립니다 (하위 폴더 포함). 폴더마다 새 영상을 넣을 디렉토리를 정할 수 있습니다 — 게임별로 녹화 폴더를 나눠 쓰면 따로 옮길 필요가 없습니다. 폴더 안에 폴더를 둘 다 등록했다면 더 안쪽 폴더의 설정을 따릅니다." />
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Bottom">
@@ -71,6 +71,15 @@
                                             CommandParameter="{Binding}">
                                         <TextBlock Text="등록 해제" Foreground="{StaticResource Danger}" />
                                     </Button>
+
+                                    <DockPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                                        <TextBlock DockPanel.Dock="Left" Text="새 영상 넣을 곳" Style="{StaticResource Caption}" Margin="0,0,10,0" />
+                                        <Button DockPanel.Dock="Right" Content="변경…" Padding="10,3" MinHeight="26"
+                                                Command="{Binding DataContext.ChangeTargetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}" />
+                                        <TextBlock Text="{Binding TargetText, StringFormat='📁 {0}'}" FontSize="13" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetText}" Margin="0,0,10,0" />
+                                    </DockPanel>
 
                                 </Grid>
                                 <DataTemplate.Triggers>

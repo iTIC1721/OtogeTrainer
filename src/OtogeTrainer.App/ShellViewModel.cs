@@ -54,6 +54,22 @@ public sealed partial class ShellViewModel : ObservableObject
             var window = new FoldersWindow(new FoldersViewModel(_library)) { Owner = System.Windows.Application.Current.MainWindow };
             window.ShowDialog();
         };
+        Library.PromptName = (title, message, initial, validate) =>
+        {
+            var window = new NamePromptWindow(title, message, initial, validate) { Owner = System.Windows.Application.Current.MainWindow };
+            return window.ShowDialog() == true ? window.Result : null;
+        };
+        Library.Confirm = message => System.Windows.MessageBox.Show(
+            System.Windows.Application.Current.MainWindow, message, "OtogeTrainer",
+            System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.OK;
+        Library.PickDirectory = (title, message, current, excluded) =>
+        {
+            var window = new DirectoryPickerWindow(title, message, Library.Tree, current, excluded)
+            {
+                Owner = System.Windows.Application.Current.MainWindow,
+            };
+            return window.ShowDialog() == true ? new DirectoryPick(window.SelectedDirectoryId) : null;
+        };
         Player.BackRequested += async (_, _) => await BackToLibraryAsync();
     }
 
@@ -107,7 +123,9 @@ public sealed partial class ShellViewModel : ObservableObject
         {
             // 지문은 파일 앞뒤 2MB 만 읽으므로 수 GB 파일에서도 즉시 끝난다.
             var (fingerprint, size) = await Core.Library.FileFingerprint.ComputeAsync(path);
-            var record = await _library.OpenOrRegisterAsync(path, fingerprint, size);
+            // 녹화 폴더 안의 파일을 직접 열었다면, 처음 등록될 때 그 폴더의 디렉토리로 (D-10)
+            var owner = FolderRules.FindOwner(await _library.GetFoldersAsync(), path);
+            var record = await _library.OpenOrRegisterAsync(path, fingerprint, size, owner?.TargetDirectoryId);
 
             if (IsPlayerScreen) await Player.CloseAsync();
             Screen = Screen.Player;
@@ -187,6 +205,15 @@ public sealed partial class ShellViewModel : ObservableObject
         if (ctx.EffectiveKey == Key.O && ctx.Modifiers == ModifierKeys.Control)
         {
             OpenFileDialogCommand.Execute(null);
+            return true;
+        }
+
+        // 라이브러리: 한 단계 위로 (탐색기와 같은 키). 검색창에 입력 중이면 가드가 여기까지 보내지 않는다
+        if (IsLibraryScreen
+            && ((ctx.EffectiveKey == Key.Back && ctx.Modifiers == ModifierKeys.None)
+                || (ctx.EffectiveKey == Key.Up && ctx.Modifiers == ModifierKeys.Alt)))
+        {
+            Library.GoUp();
             return true;
         }
 

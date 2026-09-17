@@ -25,6 +25,9 @@ public sealed record VideoRecord
 
     public double? LastSpeed { get; init; }
 
+    /// <summary>속한 디렉토리. null 이면 최상위. 파일 위치와 무관하다. (D-10)</summary>
+    public long? DirectoryId { get; init; }
+
     /// <summary>진행률 0~1. 길이를 모르면 0.</summary>
     public double Progress => DurationMs is > 0 ? Math.Clamp((double)LastPositionMs / DurationMs.Value, 0, 1) : 0;
 }
@@ -37,7 +40,9 @@ public sealed record LibraryItem(VideoRecord Video, int BookmarkCount, IReadOnly
 
 /// <summary>등록된 녹화 폴더. (FR-104)</summary>
 /// <param name="Path">정규화된 전체 경로. 끝에 구분자가 없다.</param>
-public sealed record LibraryFolder(long Id, string Path, DateTimeOffset AddedAt, DateTimeOffset? LastScanAt);
+/// <param name="TargetDirectoryId">이 폴더에서 새로 찾은 영상을 넣을 디렉토리. null 이면 최상위. (D-10)</param>
+public sealed record LibraryFolder(
+    long Id, string Path, DateTimeOffset AddedAt, DateTimeOffset? LastScanAt, long? TargetDirectoryId = null);
 
 public sealed record TagCount(string Name, int Count);
 
@@ -52,8 +57,10 @@ public enum VideoSort
 
 /// <param name="Text">제목 또는 태그 이름에 포함된 글자. 대소문자 구분 없음.</param>
 /// <param name="Tag">이 태그가 붙은 영상만.</param>
+/// <param name="Directory">이 디렉토리 안의 영상만. null 이면 위치를 가리지 않는다.</param>
 public sealed record VideoQuery(
-    string? Text = null, string? Tag = null, VideoSort Sort = VideoSort.RecentlyPlayed, int Limit = 500);
+    string? Text = null, string? Tag = null, VideoSort Sort = VideoSort.RecentlyPlayed, int Limit = 500,
+    DirectoryFilter? Directory = null);
 
 /// <summary>
 /// 영상 라이브러리 저장소. 구현은 <c>OtogeTrainer.Data</c>.
@@ -62,7 +69,9 @@ public sealed record VideoQuery(
 public interface IVideoLibrary
 {
     /// <summary>지문으로 찾고, 없으면 새로 등록한다. 찾았는데 경로가 달라졌으면 경로를 갱신한다.</summary>
-    Task<VideoRecord> OpenOrRegisterAsync(string path, string fingerprint, long fileSize, CancellationToken ct = default);
+    /// <param name="directoryForNew">새로 등록할 때만 넣을 디렉토리. 이미 있는 영상의 위치는 바꾸지 않는다.</param>
+    Task<VideoRecord> OpenOrRegisterAsync(
+        string path, string fingerprint, long fileSize, long? directoryForNew = null, CancellationToken ct = default);
 
     Task<VideoRecord?> GetAsync(long videoId, CancellationToken ct = default);
 
@@ -108,6 +117,29 @@ public interface IVideoLibrary
     Task<int> RemoveFolderAsync(long folderId, CancellationToken ct = default);
 
     Task MarkFolderScannedAsync(long folderId, DateTimeOffset at, CancellationToken ct = default);
+
+    /// <summary>이 녹화 폴더에서 새로 찾은 영상을 넣을 디렉토리. null 이면 최상위.</summary>
+    Task SetFolderTargetDirectoryAsync(long folderId, long? directoryId, CancellationToken ct = default);
+
+    // ── 디렉토리 (D-10) ─────────────────────────────────────────────────────
+    // 규칙 위반(이름 중복 · 자기 안으로 이동 · 없는 디렉토리)은 LibraryRuleException.
+
+    Task<IReadOnlyList<DirectoryEntry>> GetDirectoriesAsync(CancellationToken ct = default);
+
+    Task<LibraryDirectory> CreateDirectoryAsync(long? parentId, string name, CancellationToken ct = default);
+
+    Task RenameDirectoryAsync(long directoryId, string name, CancellationToken ct = default);
+
+    Task MoveDirectoryAsync(long directoryId, long? newParentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 디렉토리를 지운다. <b>안의 영상과 하위 디렉토리는 한 단계 위로 올라간다</b> — 영상 기록은 사라지지 않는다.
+    /// 위에 같은 이름이 있으면 <c>이름 (2)</c> 로 바꿔 올린다. 이 디렉토리를 대상으로 하던 녹화 폴더도 위를 가리키게 된다.
+    /// </summary>
+    Task DeleteDirectoryAsync(long directoryId, CancellationToken ct = default);
+
+    /// <summary>영상들을 디렉토리로 옮긴다. null 이면 최상위.</summary>
+    Task MoveVideosAsync(IReadOnlyCollection<long> videoIds, long? directoryId, CancellationToken ct = default);
 
     // ── 태그 (FR-107) ───────────────────────────────────────────────────────
 

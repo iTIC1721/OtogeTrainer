@@ -11,8 +11,12 @@ using OtogeTrainer.Core.Playback;
 namespace OtogeTrainer.App.Library;
 
 /// <summary>
-/// 라이브러리(홈) 화면. 등록된 모든 영상을 한 목록에 두고 검색 · 태그 · 정렬로 좁힌다.
-/// (FR-102 · FR-104 · FR-106 · FR-107)
+/// 라이브러리(홈) 화면. 디렉토리를 오가며 영상을 찾고, 검색 · 태그 · 정렬로 좁힌다.
+/// (FR-102 · FR-104 · FR-106 · FR-107 · D-10)
+/// <para>
+/// 검색 · 태그 필터가 없으면 <b>지금 디렉토리 바로 안</b>의 디렉토리와 영상을, 있으면
+/// <b>지금 디렉토리와 그 아래 전체</b>에서 찾은 영상을 보여 준다.
+/// </para>
 /// </summary>
 public sealed partial class LibraryViewModel : ObservableObject
 {
@@ -31,6 +35,7 @@ public sealed partial class LibraryViewModel : ObservableObject
     private bool _rescanRequested;
     private int _refreshGeneration;
     private bool _suppressSearchRefresh;
+    private bool _suppressDirectoryRefresh;
 
     public LibraryViewModel(IVideoLibrary library, AppPaths paths, TimeProvider? clock = null)
     {
@@ -49,6 +54,21 @@ public sealed partial class LibraryViewModel : ObservableObject
     }
 
     public ObservableCollection<VideoCardItem> Videos { get; } = [];
+    public ObservableCollection<DirectoryCardItem> Directories { get; } = [];
+    public ObservableCollection<BreadcrumbItem> Breadcrumbs { get; } = [];
+
+    /// <summary>지금 보고 있는 디렉토리. null 이면 최상위.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanGoUp))]
+    private long? _currentDirectoryId;
+
+    /// <summary>디렉토리 안인데 아무것도 없다.</summary>
+    [ObservableProperty] private bool _isDirectoryEmpty;
+
+    public bool CanGoUp => CurrentDirectoryId is not null;
+
+    /// <summary>마지막으로 읽은 디렉토리 구조.</summary>
+    public DirectoryTree Tree { get; private set; } = new([]);
     public ObservableCollection<TagChip> Tags { get; } = [];
     public IReadOnlyList<SortOption> Sorts { get; }
 
@@ -81,25 +101,66 @@ public sealed partial class LibraryViewModel : ObservableObject
     /// <summary>셸이 연결한다. 폴더 관리 창을 띄운다.</summary>
     public Action? FoldersDialog { get; set; }
 
+    /// <summary>셸이 연결한다. (제목, 안내, 처음 값, 검사) → 입력한 이름 또는 취소 시 null.</summary>
+    public Func<string, string, string, Func<string, string?>, string?>? PromptName { get; set; }
+
+    /// <summary>셸이 연결한다. 확인 질문 → 예/아니오.</summary>
+    public Func<string, bool>? Confirm { get; set; }
+
+    /// <summary>셸이 연결한다. (제목, 안내, 지금 위치, 고를 수 없는 디렉토리) → 고른 곳. 취소면 null.</summary>
+    public Func<string, string, long?, IReadOnlySet<long>?, DirectoryPick?>? PickDirectory { get; set; }
+
     // ── 목록 ─────────────────────────────────────────────────────────────────
 
     public async Task RefreshAsync()
     {
         var generation = ++_refreshGeneration;
 
-        var query = new VideoQuery(SearchText, SelectedTag, Sort, ListLimit);
+        var entries = await _library.GetDirectoriesAsync();
+        var tree = new DirectoryTree(entries.Select(e => e.Directory));
+        if (!tree.Contains(CurrentDirectoryId))
+        {
+            // 보고 있던 디렉토리가 지워졌다 (다른 경로로). 최상위로
+            _suppressDirectoryRefresh = true;   // 여기서 바로 이어서 읽으므로 변경 알림의 조회는 건너뛴다
+            CurrentDirectoryId = null;
+            _suppressDirectoryRefresh = false;
+        }
+
+        var filtered = IsFiltered;
+        var query = new VideoQuery(SearchText, SelectedTag, Sort, ListLimit,
+            new DirectoryFilter(CurrentDirectoryId, IncludeSubdirectories: filtered));
         var items = await _library.QueryAsync(query);
         var folders = await _library.GetFoldersAsync();
         var tags = await _library.GetTagsAsync();
-        var anyVideo = items.Count > 0 || (IsFiltered && (await _library.QueryAsync(new VideoQuery(Limit: 1))).Count > 0);
+        var anyVideo = items.Count > 0 || (await _library.QueryAsync(new VideoQuery(Limit: 1))).Count > 0;
         if (generation != _refreshGeneration) return;   // 그사이 검색어가 또 바뀌었다
 
+        Tree = tree;
         var now = _clock.GetUtcNow();
         Videos.Clear();
         foreach (var item in items)
         {
-            Videos.Add(new VideoCardItem(item, _paths.ThumbnailFor(item.Video.Fingerprint), now));
+            // 검색 결과는 여러 디렉토리에서 오므로 어디 있는지 적어 준다
+            var location = filtered && item.Video.DirectoryId != CurrentDirectoryId ? tree.DisplayPath(item.Video.DirectoryId) : "";
+            Videos.Add(new VideoCardItem(item, _paths.ThumbnailFor(item.Video.Fingerprint), now, location));
         }
+
+        Directories.Clear();
+        if (!filtered)
+        {
+            var direct = entries.ToDictionary(e => e.Directory.Id, e => e.VideoCount);
+            foreach (var dir in tree.Children(CurrentDirectoryId))
+            {
+                var subtree = tree.SelfAndDescendants(dir.Id);
+                Directories.Add(new DirectoryCardItem(
+                    dir.Id, dir.Name, subtree.Sum(id => direct.GetValueOrDefault(id)), tree.Children(dir.Id).Count));
+            }
+        }
+
+        Breadcrumbs.Clear();
+        Breadcrumbs.Add(new BreadcrumbItem(null, "라이브러리", CurrentDirectoryId is null));
+        foreach (var dir in tree.PathTo(CurrentDirectoryId))
+            Breadcrumbs.Add(new BreadcrumbItem(dir.Id, dir.Name, dir.Id == CurrentDirectoryId));
 
         // 선택한 태그가 더는 어떤 영상에도 없으면 필터를 푼다
         if (SelectedTag is { } selected && !tags.Any(t => string.Equals(t.Name, selected, StringComparison.OrdinalIgnoreCase)))
@@ -118,9 +179,12 @@ public sealed partial class LibraryViewModel : ObservableObject
         }
 
         FolderCount = folders.Count;
-        IsEmpty = !anyVideo;
-        HasNoResults = anyVideo && Videos.Count == 0;
-        ListHeader = IsFiltered ? $"검색 결과 {Videos.Count}" : $"영상 {Videos.Count}";
+        IsEmpty = !anyVideo && tree.All.Count == 0;
+        HasNoResults = !IsEmpty && filtered && Videos.Count == 0;
+        IsDirectoryEmpty = !IsEmpty && !filtered && Videos.Count == 0 && Directories.Count == 0;
+        ListHeader = filtered
+            ? CurrentDirectoryId is null ? $"검색 결과 {Videos.Count}" : $"검색 결과 {Videos.Count} · 이 디렉토리와 그 아래"
+            : Directories.Count > 0 ? $"디렉토리 {Directories.Count} · 영상 {Videos.Count}" : $"영상 {Videos.Count}";
         OnPropertyChanged(nameof(IsFiltered));
     }
 
@@ -140,6 +204,11 @@ public sealed partial class LibraryViewModel : ObservableObject
     }
 
     partial void OnSelectedTagChanged(string? value) => _ = RefreshAsync();
+
+    partial void OnCurrentDirectoryIdChanged(long? value)
+    {
+        if (!_suppressDirectoryRefresh) _ = RefreshAsync();
+    }
 
     partial void OnSortChanged(VideoSort value)
     {
@@ -192,13 +261,121 @@ public sealed partial class LibraryViewModel : ObservableObject
         await RefreshAsync();
     }
 
+    // ── 디렉토리 (D-10) ──────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void OpenDirectory(DirectoryCardItem item) => CurrentDirectoryId = item.Id;
+
+    [RelayCommand]
+    private void NavigateTo(BreadcrumbItem item) => CurrentDirectoryId = item.Id;
+
+    /// <summary>한 단계 위로. 최상위면 아무 일도 없다. (Backspace)</summary>
+    [RelayCommand]
+    public void GoUp()
+    {
+        if (CurrentDirectoryId is { } id) CurrentDirectoryId = Tree.Find(id)?.ParentId;
+    }
+
+    /// <summary>이 이름을 이 곳에 쓸 수 있는가. 문제가 있으면 안내 문구.</summary>
+    public string? ValidateDirectoryName(long? parentId, string name, long? exceptId = null)
+    {
+        string normalized;
+        try { normalized = DirectoryRules.NormalizeName(name); }
+        catch (LibraryRuleException ex) { return ex.Message; }
+
+        return Tree.Children(parentId).Any(d => d.Id != exceptId && string.Equals(d.Name, normalized, StringComparison.OrdinalIgnoreCase))
+            ? $"이 곳에 이미 '{normalized}' 이(가) 있습니다."
+            : null;
+    }
+
+    [RelayCommand]
+    private async Task CreateDirectory()
+    {
+        var parent = CurrentDirectoryId;
+        var initial = DirectoryRules.UniqueName(DirectoryRules.DefaultNewName, Tree.Children(parent).Select(d => d.Name));
+        var name = PromptName?.Invoke(
+            "새 디렉토리", $"{Tree.DisplayPath(parent)} 안에 만듭니다. 실제 파일이나 폴더는 만들지 않습니다.",
+            initial, n => ValidateDirectoryName(parent, n));
+        if (name is not null) await CreateDirectoryAsync(name);
+    }
+
+    public Task<bool> CreateDirectoryAsync(string name)
+        => RunRuleAsync(() => _library.CreateDirectoryAsync(CurrentDirectoryId, name));
+
+    [RelayCommand]
+    private async Task RenameDirectory(DirectoryCardItem item)
+    {
+        var parent = Tree.Find(item.Id)?.ParentId;
+        var name = PromptName?.Invoke("이름 바꾸기", $"'{item.Name}' 의 새 이름", item.Name,
+            n => ValidateDirectoryName(parent, n, exceptId: item.Id));
+        if (name is not null) await RenameDirectoryAsync(item, name);
+    }
+
+    public Task<bool> RenameDirectoryAsync(DirectoryCardItem item, string name)
+        => RunRuleAsync(() => _library.RenameDirectoryAsync(item.Id, name));
+
+    [RelayCommand]
+    private async Task DeleteDirectory(DirectoryCardItem item)
+    {
+        var parentPath = Tree.DisplayPath(Tree.Find(item.Id)?.ParentId);
+        var ok = Confirm?.Invoke(
+            $"'{item.Name}' 디렉토리를 삭제할까요?\n\n" +
+            $"안에 있는 영상 {item.VideoCount}개와 하위 디렉토리는 '{parentPath}' 로 올라갑니다.\n" +
+            "영상 기록과 실제 파일은 지워지지 않습니다.") ?? true;
+        if (ok) await DeleteDirectoryAsync(item);
+    }
+
+    public Task<bool> DeleteDirectoryAsync(DirectoryCardItem item)
+        => RunRuleAsync(() => _library.DeleteDirectoryAsync(item.Id));
+
+    [RelayCommand]
+    private async Task MoveDirectoryTo(DirectoryCardItem item)
+    {
+        var pick = PickDirectory?.Invoke(
+            "디렉토리 옮기기", $"'{item.Name}' 을(를) 어디로 옮길까요? 안의 영상과 디렉토리가 함께 옮겨집니다.",
+            Tree.Find(item.Id)?.ParentId, Tree.SelfAndDescendants(item.Id));
+        if (pick is not null) await MoveDirectoryAsync(item.Id, pick.DirectoryId);
+    }
+
+    public Task<bool> MoveDirectoryAsync(long directoryId, long? newParentId)
+        => RunRuleAsync(() => _library.MoveDirectoryAsync(directoryId, newParentId));
+
+    [RelayCommand]
+    private async Task MoveVideoTo(VideoCardItem item)
+    {
+        var pick = PickDirectory?.Invoke(
+            "디렉토리로 이동", $"'{item.Title}' 을(를) 어디로 옮길까요? 실제 파일 위치는 바뀌지 않습니다.",
+            item.DirectoryId, null);
+        if (pick is not null) await MoveVideoAsync(item.VideoId, pick.DirectoryId);
+    }
+
+    public Task<bool> MoveVideoAsync(long videoId, long? directoryId)
+        => RunRuleAsync(() => _library.MoveVideosAsync([videoId], directoryId));
+
+    /// <summary>규칙 위반은 알림 배너로 보여 주고 false. 성공하면 목록을 다시 읽는다.</summary>
+    private async Task<bool> RunRuleAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await RefreshAsync();
+            return true;
+        }
+        catch (LibraryRuleException ex)
+        {
+            Notify?.Invoke(ex.Message);
+            await RefreshAsync();
+            return false;
+        }
+    }
+
     // ── 폴더 · 스캔 (FR-104) ─────────────────────────────────────────────────
 
     [RelayCommand]
     private async Task ManageFolders()
     {
         FoldersDialog?.Invoke();
-        await RefreshAsync();       // 폴더를 해제해 빠진 영상 · 바뀐 기본 오프셋을 반영
+        await RefreshAsync();       // 폴더를 해제해 빠진 영상을 반영
         await ScanFoldersAsync();   // 새로 추가한 폴더를 읽는다
     }
 
@@ -278,6 +455,18 @@ public sealed partial class LibraryViewModel : ObservableObject
     }
 }
 
+/// <summary>고른 곳. <c>DirectoryId</c> 가 null 이면 최상위.</summary>
+public sealed record DirectoryPick(long? DirectoryId);
+
+/// <param name="VideoCount">이 디렉토리와 그 아래 모든 영상 수.</param>
+public sealed record DirectoryCardItem(long Id, string Name, int VideoCount, int SubdirectoryCount)
+{
+    public string CountText => SubdirectoryCount > 0 ? $"영상 {VideoCount} · 디렉토리 {SubdirectoryCount}" : $"영상 {VideoCount}";
+}
+
+/// <param name="Id">null 이면 최상위(라이브러리).</param>
+public sealed record BreadcrumbItem(long? Id, string Name, bool IsCurrent);
+
 public sealed partial class SortOption(VideoSort sort, string label) : ObservableObject
 {
     public VideoSort Sort { get; } = sort;
@@ -296,10 +485,12 @@ public sealed partial class TagChip(string name, int count) : ObservableObject
 /// <summary>목록 카드 한 장. (UI-BLUEPRINT §3)</summary>
 public sealed class VideoCardItem
 {
-    public VideoCardItem(LibraryItem source, string thumbnailPath, DateTimeOffset now)
+    public VideoCardItem(LibraryItem source, string thumbnailPath, DateTimeOffset now, string locationText = "")
     {
         var v = source.Video;
         VideoId = v.Id;
+        DirectoryId = v.DirectoryId;
+        LocationText = locationText;
         Path = v.Path;
         Title = v.Title;
         TagList = source.Tags;
@@ -317,6 +508,10 @@ public sealed class VideoCardItem
     }
 
     public long VideoId { get; }
+    public long? DirectoryId { get; }
+
+    /// <summary>검색 결과에서만: 이 영상이 있는 디렉토리 경로.</summary>
+    public string LocationText { get; }
     public string Path { get; }
     public string Title { get; }
     public IReadOnlyList<string> TagList { get; }

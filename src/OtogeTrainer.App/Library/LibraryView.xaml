@@ -17,9 +17,13 @@
                     Command="{Binding DataContext.OpenVideoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding}"
                     Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    ToolTip="{Binding Path}">
+                    ToolTip="{Binding Path}"
+                    PreviewMouseLeftButtonDown="OnDragSourceDown" PreviewMouseMove="OnDragSourceMove">
                 <Button.ContextMenu>
                     <ContextMenu DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="디렉토리로 이동…"
+                                  Command="{Binding MoveVideoToCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         <MenuItem Header="태그 편집…"
                                   Command="{Binding EditTagsCommand}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
@@ -80,6 +84,9 @@
                         <TextBlock Text="{Binding TagsText}" Style="{StaticResource Caption}" Margin="0,6,0,0"
                                    Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis"
                                    Visibility="{Binding TagsText, Converter={StaticResource HasValue}}" />
+                        <TextBlock Text="{Binding LocationText, StringFormat='📁 {0}'}" Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding LocationText}"
+                                   Visibility="{Binding LocationText, Converter={StaticResource HasValue}}" />
                     </StackPanel>
                 </StackPanel>
             </Button>
@@ -88,6 +95,41 @@
                     <Setter TargetName="Card" Property="Opacity" Value="0.55" />
                 </DataTrigger>
             </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 디렉토리 카드 (D-10). 누르면 들어가고, 영상 · 디렉토리 카드를 끌어다 놓으면 옮긴다 -->
+        <DataTemplate x:Key="DirectoryCard" DataType="{x:Type lib:DirectoryCardItem}">
+            <Button Margin="0,0,16,16" Padding="14,10" Width="256" MinHeight="58"
+                    HorizontalContentAlignment="Stretch"
+                    Background="{StaticResource Bg1}"
+                    Command="{Binding DataContext.OpenDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding}"
+                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    AllowDrop="True" DragOver="OnDropTargetDragOver" DragLeave="OnDropTargetDragLeave" Drop="OnDropTargetDrop"
+                    PreviewMouseLeftButtonDown="OnDragSourceDown" PreviewMouseMove="OnDragSourceMove"
+                    ToolTip="누르면 열기 · 카드를 끌어다 놓으면 이 안으로 이동 · 우클릭 메뉴">
+                <Button.ContextMenu>
+                    <ContextMenu DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="이름 바꾸기…"
+                                  Command="{Binding RenameDirectoryCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <MenuItem Header="다른 디렉토리로 이동…"
+                                  Command="{Binding MoveDirectoryToCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <Separator />
+                        <MenuItem Header="삭제…"
+                                  Command="{Binding DeleteDirectoryCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="📁" FontSize="22" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding CountText}" Style="{StaticResource Caption}" Margin="0,3,0,0" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </DockPanel>
+            </Button>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -108,6 +150,9 @@
             <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="⚙  설정" Margin="0,0,8,0"
                     Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                     ToolTip="재생 중 동작 키 바꾸기" />
+            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
+                    Content="📁  새 디렉토리" Command="{Binding CreateDirectoryCommand}"
+                    ToolTip="지금 위치에 디렉토리를 만듭니다 — 앱 안에서만 쓰는 분류이고, 실제 파일은 옮기지 않습니다" />
             <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
                     Command="{Binding ManageFoldersCommand}"
                     ToolTip="녹화 영상이 저장되는 폴더를 등록하면 새 영상을 자동으로 올립니다">
@@ -170,6 +215,41 @@
 
         <!-- 태그 칩 (FR-107) · 목록 제목 -->
         <StackPanel Grid.Row="2" Visibility="{Binding IsEmpty, Converter={StaticResource InverseBool}}">
+            <!-- 경로 (D-10). 조각을 누르면 그 위치로, 카드를 끌어다 놓으면 그 위치로 이동 -->
+            <DockPanel Margin="0,0,0,10">
+                <Button DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="↑" Padding="8,2" MinHeight="28"
+                        Margin="0,0,6,0" Command="{Binding GoUpCommand}" ToolTip="위로 (Backspace)"
+                        Visibility="{Binding CanGoUp, Converter={StaticResource BoolToVisibility}}" />
+                <ItemsControl ItemsSource="{Binding Breadcrumbs}" Focusable="False" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type lib:BreadcrumbItem}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="Separator" Text="›" Foreground="{StaticResource Fg2}" FontSize="15"
+                                           VerticalAlignment="Center" Margin="2,0" />
+                                <Button Style="{StaticResource GhostButton}" Padding="8,2" MinHeight="28"
+                                        Command="{Binding DataContext.NavigateToCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        AllowDrop="True" DragOver="OnDropTargetDragOver" DragLeave="OnDropTargetDragLeave" Drop="OnDropTargetDrop">
+                                    <TextBlock x:Name="CrumbText" Text="{Binding Name}" FontSize="15" Foreground="{StaticResource Fg1}" />
+                                </Button>
+                            </StackPanel>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Id}" Value="{x:Null}">
+                                    <Setter TargetName="Separator" Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter TargetName="CrumbText" Property="Foreground" Value="{StaticResource Fg0}" />
+                                    <Setter TargetName="CrumbText" Property="FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+
             <ItemsControl ItemsSource="{Binding Tags}" Focusable="False">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -202,16 +282,33 @@
             </DockPanel>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Focusable="False"
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Focusable="False" Background="Transparent"
                       Visibility="{Binding IsEmpty, Converter={StaticResource InverseBool}}">
-            <ItemsControl ItemsSource="{Binding Videos}" ItemTemplate="{StaticResource VideoCard}" Focusable="False">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
+            <ScrollViewer.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="새 디렉토리…" Command="{Binding CreateDirectoryCommand}" />
+                </ContextMenu>
+            </ScrollViewer.ContextMenu>
+            <StackPanel>
+                <ItemsControl x:Name="DirectoryList" ItemsSource="{Binding Directories}" ItemTemplate="{StaticResource DirectoryCard}" Focusable="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+                <ItemsControl ItemsSource="{Binding Videos}" ItemTemplate="{StaticResource VideoCard}" Focusable="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
         </ScrollViewer>
+
+        <TextBlock Grid.Row="3" Style="{StaticResource Caption}" FontSize="14" TextAlignment="Center"
+                   HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,48,0,0" IsHitTestVisible="False"
+                   Text="비어 있는 디렉토리입니다.&#x0a;영상 카드를 끌어다 위의 경로에 놓거나, 영상 카드 우클릭 → 디렉토리로 이동으로 넣으세요."
+                   Visibility="{Binding IsDirectoryEmpty, Converter={StaticResource BoolToVisibility}}" />
 
         <TextBlock Grid.Row="3" Text="조건에 맞는 영상이 없습니다." Style="{StaticResource Caption}" FontSize="14"
                    HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,48,0,0"
@@ -234,6 +331,6 @@
         </Border>
 
         <TextBlock Grid.Row="4" Margin="0,8,0,12" Style="{StaticResource Caption}"
-                   Text="카드를 누르면 마지막 위치 · 배속 · 오프셋 · 북마크가 복원된 상태로 열립니다. 우클릭 → 태그 편집." />
+                   Text="카드를 누르면 마지막 위치 · 배속 · 오프셋 · 북마크가 복원된 상태로 열립니다. 우클릭 → 디렉토리로 이동 · 태그 편집. 카드를 디렉토리나 경로로 끌어다 놓아도 옮겨집니다. 디렉토리는 앱 안의 분류이며 실제 파일은 옮기지 않습니다." TextWrapping="Wrap" />
     </Grid>
 </UserControl>

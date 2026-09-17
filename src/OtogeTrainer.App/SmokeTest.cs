@@ -770,6 +770,110 @@ internal static class SmokeTest
             Check(shell.Library.Videos.Count == assetCount - 1 && shell.Library.FolderCount == 0,
                   "폴더 해제 → 손대지 않은 영상만 빠짐", $"{shell.Library.Videos.Count}/{assetCount}");
 
+            // ── 9-3. 디렉토리 (D-10) ────────────────────────────────────────
+            Emit("");
+            Emit("9-3. 디렉토리 — 파일 위치와 무관한 앱 안의 분류 (D-10)");
+            var lib = shell.Library;
+            shell.Notice = null;
+            Check(lib.Breadcrumbs.Count == 1 && !lib.CanGoUp && lib.Directories.Count == 0, "최상위: 경로는 '라이브러리' 하나");
+
+            Check(lib.ValidateDirectoryName(null, "   ") is not null, "빈 이름은 입력 단계에서 막음");
+            await lib.CreateDirectoryAsync("리듬게임");
+            Check(lib.Directories.Count == 1 && lib.Directories[0].Name == "리듬게임", "디렉토리 만들기",
+                  string.Join(",", lib.Directories.Select(d => d.Name)));
+            Check(lib.ValidateDirectoryName(null, "리듬게임") is not null, "같은 곳 같은 이름은 입력 단계에서 막음");
+
+            lib.OpenDirectoryCommand.Execute(lib.Directories[0]);
+            await WaitUntil(() => lib.Breadcrumbs.Count == 2);
+            var gamesId = lib.CurrentDirectoryId;
+            Check(lib.Breadcrumbs.Count == 2 && lib.IsDirectoryEmpty && lib.CanGoUp, "들어가면 경로 2단 · 빈 디렉토리 안내");
+            await lib.CreateDirectoryAsync("IIDX");
+            var iidxId = lib.Tree.All.First(d => d.Name == "IIDX").Id;
+            Check(lib.Tree.Find(iidxId)?.ParentId == gamesId, "디렉토리 안에 디렉토리");
+
+            await Press(Key.Back);
+            await WaitUntil(() => lib.CurrentDirectoryId is null && lib.Directories.Count == 1);
+            Check(lib.CurrentDirectoryId is null, "Backspace → 한 단계 위로");
+
+            var clipCard = lib.Videos.First(v => v.Path == clip);
+            await lib.MoveVideoAsync(clipCard.VideoId, iidxId);
+            Check(lib.Videos.All(v => v.Path != clip) && lib.Directories[0].CountText == "영상 1 · 디렉토리 1",
+                  "영상을 IIDX 로 이동 → 최상위에서 빠지고 카드 수에 반영", lib.Directories[0].CountText);
+            Check(File.Exists(clip), "실제 파일은 그대로");
+
+            lib.SearchText = "frametest_60";
+            await WaitUntil(() => lib.Videos.Count == 1);
+            Check(lib.Videos.Count == 1 && lib.Videos[0].LocationText == "라이브러리 › 리듬게임 › IIDX" && lib.Directories.Count == 0,
+                  "최상위에서 검색하면 하위 디렉토리까지 · 위치 표시", lib.Videos.FirstOrDefault()?.LocationText ?? "");
+            lib.ClearFiltersCommand.Execute(null);
+            await WaitUntil(() => lib.Directories.Count == 1);
+
+            lib.CurrentDirectoryId = iidxId;
+            await WaitUntil(() => lib.Videos.Count == 1);
+            Check(lib.Breadcrumbs.Select(b => b.Name).SequenceEqual(["라이브러리", "리듬게임", "IIDX"]) && lib.Videos[0].Path == clip,
+                  "IIDX 안에 옮긴 영상", string.Join(" › ", lib.Breadcrumbs.Select(b => b.Name)));
+            await Task.Delay(300);
+            Capture(window, "m2-directory-inside.png");
+
+            await lib.OpenVideoCommand.ExecuteAsync(lib.Videos[0]);
+            await WaitUntil(() => player.HasVideo);
+            await shell.BackToLibraryAsync();
+            Check(lib.CurrentDirectoryId == iidxId && lib.Videos.Count == 1, "영상을 보고 돌아오면 보던 디렉토리 그대로");
+
+            lib.CurrentDirectoryId = gamesId;
+            await WaitUntil(() => lib.Directories.Count == 1);
+            await lib.RenameDirectoryAsync(lib.Directories[0], "beatmania IIDX");
+            Check(lib.Directories[0].Name == "beatmania IIDX", "이름 바꾸기", lib.Directories[0].Name);
+
+            var moved = await lib.MoveDirectoryAsync(gamesId!.Value, iidxId);
+            Check(!moved && shell.Notice?.Contains("옮길 수 없") == true, "자기 안으로 옮기기는 막고 안내", shell.Notice ?? "");
+            shell.Notice = null;
+
+            // 녹화 폴더 → 새 영상을 넣을 디렉토리
+            var inbox = Path.Combine(paths.DataDirectory, "rec-inbox");
+            Directory.CreateDirectory(inbox);
+            await File.WriteAllBytesAsync(Path.Combine(inbox, "new_capture.mp4"), Guid.NewGuid().ToByteArray().Concat(new byte[4096]).ToArray());
+            var inboxFolder = await folderLib.AddFolderAsync(inbox);
+            await folderLib.SetFolderTargetDirectoryAsync(inboxFolder.Id, iidxId);
+            await lib.ScanFoldersAsync();
+            var newCapture = (await folderLib.QueryAsync(new Core.Library.VideoQuery("new_capture")))[0].Video;
+            Check(newCapture.DirectoryId == iidxId, "녹화 폴더에서 새로 찾은 영상 → 지정한 디렉토리로",
+                  lib.Tree.DisplayPath(newCapture.DirectoryId));
+
+            var targetWindow = new Library.FoldersWindow(new Library.FoldersViewModel(folderLib)) { Owner = window };
+            targetWindow.Show();
+            await WaitUntil(() => targetWindow.ViewModel.Folders.Count == 1);
+            await Task.Delay(300);
+            Check(targetWindow.ViewModel.Folders[0].TargetText == "라이브러리 › 리듬게임 › beatmania IIDX",
+                  "녹화 폴더 창에 넣을 곳 표시", targetWindow.ViewModel.Folders[0].TargetText);
+            Capture(targetWindow, "m2-folders-target.png");
+            targetWindow.Close();
+
+            var picker = new Library.DirectoryPickerWindow(
+                "디렉토리로 이동", "어디로 옮길까요? 실제 파일 위치는 바뀌지 않습니다.", lib.Tree, iidxId) { Owner = window };
+            picker.Show();
+            await Task.Delay(400);
+            Capture(picker, "m2-directory-picker.png");
+            picker.Close();
+
+            var prompt = new Library.NamePromptWindow(
+                "새 디렉토리", "라이브러리 안에 만듭니다.", "리듬게임", n => lib.ValidateDirectoryName(null, n)) { Owner = window };
+            prompt.Show();
+            await Task.Delay(400);
+            Capture(prompt, "m2-name-prompt.png");
+            prompt.Close();
+
+            lib.CurrentDirectoryId = null;
+            await WaitUntil(() => lib.Breadcrumbs.Count == 1);
+            await Task.Delay(300);
+            Capture(window, "m2-directories.png");
+
+            await lib.DeleteDirectoryAsync(lib.Directories.First(d => d.Name == "리듬게임"));
+            Check(lib.Directories.Any(d => d.Name == "beatmania IIDX") && lib.Directories.All(d => d.Name != "리듬게임"),
+                  "디렉토리 삭제 → 안의 디렉토리가 위로 올라옴", string.Join(",", lib.Directories.Select(d => d.Name)));
+            Check((await folderLib.GetAsync(clipCard.VideoId))?.DirectoryId == iidxId && File.Exists(clip),
+                  "영상 기록 · 파일은 그대로");
+
             // ── 10. 창 닫기 ─────────────────────────────────────────────────
             // 라이브러리 화면에서 닫으면 저장할 것이 없어 종료 저장이 동기로 끝난다. 그 경로에서
             // Closing 도중 Close() 를 다시 불러 예외가 났었다(수동 사용 중 발견).

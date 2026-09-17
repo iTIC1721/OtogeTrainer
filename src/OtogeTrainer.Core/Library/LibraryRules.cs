@@ -24,6 +24,13 @@ public static class FolderRules
     }
 
     /// <summary>
+    /// 파일을 포함하는 <b>가장 깊은</b> 녹화 폴더. 그 폴더의 대상 디렉토리로 새 영상이 들어간다.
+    /// 상위 폴더와 하위 폴더를 둘 다 등록했으면 하위 폴더가 이긴다.
+    /// </summary>
+    public static LibraryFolder? FindOwner(IEnumerable<LibraryFolder> folders, string filePath)
+        => folders.Where(f => Contains(f.Path, filePath)).MaxBy(f => f.Path.Length);
+
+    /// <summary>
     /// 파일이 폴더 아래(하위 폴더 포함)에 있는가. 대소문자를 구분하지 않는다.
     /// <para>
     /// 경계를 지킨다 — <c>D:\rec</c> 는 <c>D:\recording\a.mp4</c> 를 포함하지 않는다.

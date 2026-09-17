@@ -194,5 +194,24 @@ internal static class Migrations
 
             ALTER TABLE folders DROP COLUMN default_av_offset_ms;
             """),
+
+        new(4, "디렉토리 — 파일 위치와 무관한 앱 안의 정리 단위 (D-10)",
+            """
+            -- 부모를 지우기 전에 앱이 내용을 위로 옮긴다. 빠뜨리면 외래 키가 막는다(NO ACTION).
+            CREATE TABLE directories (
+                id         INTEGER PRIMARY KEY,
+                parent_id  INTEGER REFERENCES directories (id),
+                name       TEXT    NOT NULL,
+                created_at TEXT    NOT NULL
+            );
+
+            -- 같은 곳에 같은 이름(대소문자 무시)은 하나만. 최상위는 parent_id 가 NULL 이라 0 으로 묶는다.
+            CREATE UNIQUE INDEX ux_directories_sibling_name ON directories (ifnull(parent_id, 0), name COLLATE NOCASE);
+
+            ALTER TABLE videos ADD COLUMN directory_id INTEGER REFERENCES directories (id) ON DELETE SET NULL;
+            CREATE INDEX ix_videos_directory ON videos (directory_id);
+
+            ALTER TABLE folders ADD COLUMN target_directory_id INTEGER REFERENCES directories (id) ON DELETE SET NULL;
+            """),
     ];
 }

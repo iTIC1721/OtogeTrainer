@@ -18,10 +18,10 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
 
     private const string VideoColumns =
         "id, fingerprint, path, title, file_size, duration_ms, fps, added_at, " +
-        "last_played_at, play_count, last_position_ms, av_offset_ms, last_speed";
+        "last_played_at, play_count, last_position_ms, av_offset_ms, last_speed, directory_id";
 
     public async Task<VideoRecord> OpenOrRegisterAsync(
-        string path, string fingerprint, long fileSize, CancellationToken ct = default)
+        string path, string fingerprint, long fileSize, long? directoryForNew = null, CancellationToken ct = default)
     {
         await using var conn = await db.OpenAsync(ct);
         await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
@@ -33,13 +33,15 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
             await using var insert = conn.CreateCommand();
             insert.Transaction = tx;
             insert.CommandText =
-                "INSERT INTO videos (fingerprint, path, title, file_size, added_at) " +
-                "VALUES ($fp, $path, $title, $size, $now) RETURNING id;";
+                "INSERT INTO videos (fingerprint, path, title, file_size, added_at, directory_id) " +
+                "VALUES ($fp, $path, $title, $size, $now, " +
+                "        (SELECT id FROM directories WHERE id = $dir)) RETURNING id;";   // 지워진 디렉토리면 최상위로
             insert.Parameters.AddWithValue("$fp", fingerprint);
             insert.Parameters.AddWithValue("$path", path);
             insert.Parameters.AddWithValue("$title", DefaultTitle(path));
             insert.Parameters.AddWithValue("$size", fileSize);
             insert.Parameters.AddWithValue("$now", Now());
+            insert.Parameters.AddWithValue("$dir", (object?)directoryForNew ?? DBNull.Value);
             var id = (long)(await insert.ExecuteScalarAsync(ct))!;
 
             existing = await QuerySingleAsync(conn, tx, "WHERE id = $id", ct, ("$id", id));
@@ -90,6 +92,23 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
                 $"(title LIKE $w{i} ESCAPE '\\' OR EXISTS (SELECT 1 FROM video_tags vt JOIN tags t ON t.id = vt.tag_id " +
                 $"WHERE vt.video_id = videos.id AND t.name LIKE $w{i} ESCAPE '\\'))");
             args.Add(($"$w{i}", "%" + EscapeLike(words[i]) + "%"));
+        }
+
+        switch (query.Directory)
+        {
+            case null: break;
+            case { Id: null, IncludeSubdirectories: true }: break;   // 최상위와 그 아래 = 전부
+            case { Id: null }: conditions.Add("directory_id IS NULL"); break;
+            case { Id: { } dir, IncludeSubdirectories: false }:
+                conditions.Add("directory_id = $dir");
+                args.Add(("$dir", dir));
+                break;
+            case { Id: { } dir }:
+                conditions.Add(
+                    "directory_id IN (WITH RECURSIVE sub(id) AS (SELECT $dir UNION ALL " +
+                    "SELECT d.id FROM directories d JOIN sub ON d.parent_id = sub.id) SELECT id FROM sub)");
+                args.Add(("$dir", dir));
+                break;
         }
 
         if (!string.IsNullOrWhiteSpace(query.Tag))
@@ -226,7 +245,7 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
             cmd.Transaction = tx;
             cmd.CommandText =
                 "SELECT id, path FROM videos v " +
-                "WHERE last_played_at IS NULL AND av_offset_ms IS NULL " +
+                "WHERE last_played_at IS NULL AND av_offset_ms IS NULL AND directory_id IS NULL " +
                 "  AND NOT EXISTS (SELECT 1 FROM bookmarks b WHERE b.video_id = v.id) " +
                 "  AND NOT EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id = v.id);";
             await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -264,6 +283,162 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         => ExecuteAsync(
             "UPDATE folders SET last_scan_at = $at WHERE id = $id;", ct,
             ("$at", at.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)), ("$id", folderId));
+
+    public Task SetFolderTargetDirectoryAsync(long folderId, long? directoryId, CancellationToken ct = default)
+        => ExecuteAsync(
+            "UPDATE folders SET target_directory_id = (SELECT id FROM directories WHERE id = $dir) WHERE id = $id;", ct,
+            ("$dir", (object?)directoryId ?? DBNull.Value), ("$id", folderId));
+
+    // ── 디렉토리 (D-10) ──────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<DirectoryEntry>> GetDirectoriesAsync(CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "SELECT d.id, d.parent_id, d.name, d.created_at, " +
+            "       (SELECT COUNT(*) FROM videos v WHERE v.directory_id = d.id) " +
+            "FROM directories d ORDER BY d.name COLLATE NOCASE;";
+
+        var list = new List<DirectoryEntry>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new DirectoryEntry(ReadDirectory(reader), reader.GetInt32(4)));
+        return list;
+    }
+
+    public async Task<LibraryDirectory> CreateDirectoryAsync(long? parentId, string name, CancellationToken ct = default)
+    {
+        var normalized = DirectoryRules.NormalizeName(name);
+
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+        var tree = new DirectoryTree(await ReadDirectoriesAsync(conn, tx, ct));
+
+        if (!tree.Contains(parentId)) throw new LibraryRuleException("상위 디렉토리가 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.");
+        EnsureNameFree(tree, parentId, normalized, exceptId: null);
+
+        await using var insert = conn.CreateCommand();
+        insert.Transaction = tx;
+        insert.CommandText =
+            "INSERT INTO directories (parent_id, name, created_at) VALUES ($parent, $name, $now) RETURNING id;";
+        insert.Parameters.AddWithValue("$parent", (object?)parentId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$name", normalized);
+        insert.Parameters.AddWithValue("$now", Now());
+        var id = (long)(await insert.ExecuteScalarAsync(ct))!;
+
+        await tx.CommitAsync(ct);
+        return new LibraryDirectory(id, parentId, normalized, _clock.GetUtcNow());
+    }
+
+    public async Task RenameDirectoryAsync(long directoryId, string name, CancellationToken ct = default)
+    {
+        var normalized = DirectoryRules.NormalizeName(name);
+
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+        var tree = new DirectoryTree(await ReadDirectoriesAsync(conn, tx, ct));
+        var dir = tree.Find(directoryId) ?? throw MissingDirectory();
+
+        EnsureNameFree(tree, dir.ParentId, normalized, exceptId: directoryId);
+        await RunAsync(conn, tx, "UPDATE directories SET name = $name WHERE id = $id;", ct,
+            ("$name", normalized), ("$id", directoryId));
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task MoveDirectoryAsync(long directoryId, long? newParentId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+        var tree = new DirectoryTree(await ReadDirectoriesAsync(conn, tx, ct));
+        var dir = tree.Find(directoryId) ?? throw MissingDirectory();
+
+        if (dir.ParentId == newParentId) return;
+        if (!tree.Contains(newParentId)) throw MissingDirectory();
+        if (newParentId is { } target && tree.SelfAndDescendants(directoryId).Contains(target))
+            throw new LibraryRuleException($"'{dir.Name}' 을(를) 자기 자신이나 그 안의 디렉토리로 옮길 수 없습니다.");
+        EnsureNameFree(tree, newParentId, dir.Name, exceptId: directoryId);
+
+        await RunAsync(conn, tx, "UPDATE directories SET parent_id = $parent WHERE id = $id;", ct,
+            ("$parent", (object?)newParentId ?? DBNull.Value), ("$id", directoryId));
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task DeleteDirectoryAsync(long directoryId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+        var tree = new DirectoryTree(await ReadDirectoriesAsync(conn, tx, ct));
+        var dir = tree.Find(directoryId) ?? throw MissingDirectory();
+        object parent = (object?)dir.ParentId ?? DBNull.Value;
+
+        // 하위 디렉토리를 위로. 위에 같은 이름이 있으면 "이름 (2)"
+        var siblingNames = tree.Children(dir.ParentId).Where(d => d.Id != directoryId).Select(d => d.Name).ToList();
+        foreach (var child in tree.Children(directoryId))
+        {
+            var name = DirectoryRules.UniqueName(child.Name, siblingNames);
+            siblingNames.Add(name);
+            await RunAsync(conn, tx, "UPDATE directories SET parent_id = $parent, name = $name WHERE id = $id;", ct,
+                ("$parent", parent), ("$name", name), ("$id", child.Id));
+        }
+
+        await RunAsync(conn, tx, "UPDATE videos SET directory_id = $parent WHERE directory_id = $id;", ct,
+            ("$parent", parent), ("$id", directoryId));
+        await RunAsync(conn, tx, "UPDATE folders SET target_directory_id = $parent WHERE target_directory_id = $id;", ct,
+            ("$parent", parent), ("$id", directoryId));
+        await RunAsync(conn, tx, "DELETE FROM directories WHERE id = $id;", ct, ("$id", directoryId));
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task MoveVideosAsync(IReadOnlyCollection<long> videoIds, long? directoryId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+        if (directoryId is { } dir && new DirectoryTree(await ReadDirectoriesAsync(conn, tx, ct)).Find(dir) is null)
+            throw MissingDirectory();
+
+        foreach (var videoId in videoIds)
+        {
+            await RunAsync(conn, tx, "UPDATE videos SET directory_id = $dir WHERE id = $id;", ct,
+                ("$dir", (object?)directoryId ?? DBNull.Value), ("$id", videoId));
+        }
+        await tx.CommitAsync(ct);
+    }
+
+    private static void EnsureNameFree(DirectoryTree tree, long? parentId, string name, long? exceptId)
+    {
+        if (tree.Children(parentId).Any(d => d.Id != exceptId && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+            throw new LibraryRuleException($"'{tree.DisplayPath(parentId)}' 에 이미 '{name}' 디렉토리가 있습니다.");
+    }
+
+    private static LibraryRuleException MissingDirectory()
+        => new("디렉토리를 찾을 수 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.");
+
+    private static async Task<List<LibraryDirectory>> ReadDirectoriesAsync(
+        SqliteConnection conn, SqliteTransaction? tx, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT id, parent_id, name, created_at FROM directories;";
+
+        var list = new List<LibraryDirectory>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) list.Add(ReadDirectory(reader));
+        return list;
+    }
+
+    private static LibraryDirectory ReadDirectory(SqliteDataReader r) => new(
+        r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetString(2), ParseTime(r.GetString(3)));
+
+    private static async Task RunAsync(
+        SqliteConnection conn, SqliteTransaction tx, string sql, CancellationToken ct, params (string Name, object Value)[] args)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     // ── 태그 ─────────────────────────────────────────────────────────────────
 
@@ -361,10 +536,10 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            string[] tags = reader.IsDBNull(14)
+            string[] tags = reader.IsDBNull(15)
                 ? []
-                : reader.GetString(14).Split(TagSeparator).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-            list.Add(new LibraryItem(ReadVideo(reader), reader.GetInt32(13), tags));
+                : reader.GetString(15).Split(TagSeparator).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            list.Add(new LibraryItem(ReadVideo(reader), reader.GetInt32(14), tags));
         }
         return list;
     }
@@ -381,7 +556,7 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
-            $"SELECT id, path, added_at, last_scan_at FROM folders {where} " +
+            $"SELECT id, path, added_at, last_scan_at, target_directory_id FROM folders {where} " +
             "ORDER BY path COLLATE NOCASE;";
         foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
 
@@ -393,7 +568,8 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
                 reader.GetInt64(0),
                 reader.GetString(1),
                 ParseTime(reader.GetString(2)),
-                reader.IsDBNull(3) ? null : ParseTime(reader.GetString(3))));
+                reader.IsDBNull(3) ? null : ParseTime(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetInt64(4)));
         }
         return list;
     }
@@ -426,6 +602,7 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         LastPositionMs = r.GetInt64(10),
         AvOffsetMs = r.IsDBNull(11) ? null : r.GetInt32(11),
         LastSpeed = r.IsDBNull(12) ? null : r.GetDouble(12),
+        DirectoryId = r.IsDBNull(13) ? null : r.GetInt64(13),
     };
 
     private static DateTimeOffset ParseTime(string s)

@@ -28,6 +28,10 @@ public sealed class LibraryScanner(IVideoLibrary library, TimeProvider? clock = 
 
         var known = new Dictionary<string, long>(await library.GetKnownFileSizesAsync(ct), StringComparer.OrdinalIgnoreCase);
 
+        // 새 영상이 들어갈 디렉토리는 파일마다 "가장 깊은 녹화 폴더" 기준이다. 상위 폴더를 먼저 훑어도
+        // 하위 폴더에 지정한 디렉토리로 들어가게 한다.
+        var folders = await library.GetFoldersAsync(ct);
+
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true,
@@ -53,7 +57,8 @@ public sealed class LibraryScanner(IVideoLibrary library, TimeProvider? clock = 
                 else
                 {
                     var (fingerprint, fileSize) = await FileFingerprint.ComputeAsync(path, ct);
-                    await library.OpenOrRegisterAsync(path, fingerprint, fileSize, ct);
+                    var target = (FolderRules.FindOwner(folders, path) ?? folder).TargetDirectoryId;
+                    await library.OpenOrRegisterAsync(path, fingerprint, fileSize, target, ct);
                     registered++;
                 }
             }
