@@ -174,5 +174,25 @@ internal static class Migrations
             CREATE INDEX ix_video_tags_tag ON video_tags (tag_id);
             CREATE INDEX ix_videos_path ON videos (path COLLATE NOCASE);
             """),
+
+        new(3, "폴더 기본 오프셋 폐지 — 영상별 오프셋 + 프리셋으로 (D-9)",
+            """
+            -- 지금 폴더 기본값을 물려받고 있는 영상은 그 값을 영상별 값으로 굳힌다.
+            -- 이렇게 하지 않으면 업데이트 순간 싱크가 조용히 0 으로 돌아간다.
+            -- 경로 포함 판정은 FolderRules.Contains 와 같게: 대소문자 무시 + 경로 경계.
+            UPDATE videos
+            SET av_offset_ms = (
+                SELECT f.default_av_offset_ms
+                FROM folders f
+                WHERE f.default_av_offset_ms IS NOT NULL
+                  AND length(videos.path) > length(f.path)
+                  AND substr(videos.path, 1, length(f.path)) = f.path COLLATE NOCASE
+                  AND (substr(f.path, -1) = '\' OR substr(videos.path, length(f.path) + 1, 1) = '\')
+                ORDER BY length(f.path) DESC
+                LIMIT 1)
+            WHERE av_offset_ms IS NULL;
+
+            ALTER TABLE folders DROP COLUMN default_av_offset_ms;
+            """),
     ];
 }

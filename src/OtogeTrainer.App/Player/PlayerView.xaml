@@ -223,12 +223,9 @@
                             CommandParameter="{StaticResource OffsetUp}" ToolTip="오프셋 +5ms (])" />
                     <Button Style="{StaticResource ControlButton}" Content="0" Command="{Binding ResetOffsetCommand}"
                             ToolTip="오프셋 0 (Ctrl+Shift+0)" />
-                    <TextBlock Text="{Binding OffsetSourceText}" Style="{StaticResource Caption}" Margin="4,0,6,0"
-                               Foreground="{StaticResource Warn}"
-                               ToolTip="이 영상은 오프셋을 따로 조정하지 않아 폴더에 정한 기본값을 씁니다. 조정하면 이 영상만의 값이 됩니다." />
-                    <Button Style="{StaticResource ControlButton}" Content="폴더값" Command="{Binding FollowFolderOffsetCommand}"
-                            Visibility="{Binding CanFollowFolderOffset, Converter={StaticResource BoolToVisibility}}"
-                            ToolTip="이 영상만의 오프셋을 지우고 폴더에 정한 기본 오프셋을 따릅니다" />
+                    <Button x:Name="OffsetPresetButton" Style="{StaticResource ControlButton}" Content="프리셋 ▾"
+                            Click="OnOffsetPresetsClick"
+                            ToolTip="저장해 둔 오프셋을 이 영상에 적용 · 지금 값을 프리셋으로 추가 (이름은 설정에서)" />
 
                     <Border Style="{StaticResource Divider}" />
 

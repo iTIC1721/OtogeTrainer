@@ -98,9 +98,7 @@ public sealed partial class LibraryViewModel : ObservableObject
         Videos.Clear();
         foreach (var item in items)
         {
-            Videos.Add(new VideoCardItem(
-                item, FolderRules.InheritedOffset(folders, item.Video.Path),
-                _paths.ThumbnailFor(item.Video.Fingerprint), now));
+            Videos.Add(new VideoCardItem(item, _paths.ThumbnailFor(item.Video.Fingerprint), now));
         }
 
         // 선택한 태그가 더는 어떤 영상에도 없으면 필터를 푼다
@@ -298,7 +296,7 @@ public sealed partial class TagChip(string name, int count) : ObservableObject
 /// <summary>목록 카드 한 장. (UI-BLUEPRINT §3)</summary>
 public sealed class VideoCardItem
 {
-    public VideoCardItem(LibraryItem source, int? inheritedOffsetMs, string thumbnailPath, DateTimeOffset now)
+    public VideoCardItem(LibraryItem source, string thumbnailPath, DateTimeOffset now)
     {
         var v = source.Video;
         VideoId = v.Id;
@@ -312,12 +310,7 @@ public sealed class VideoCardItem
         ProgressText = v.LastPlayedAt is null ? "" : v.Progress >= 0.95 ? "완료" : $"{v.Progress:P0}";
         LastPlayedText = v.LastPlayedAt is { } at ? Relative(now - at, at) : "재생 전";
         BookmarkText = source.BookmarkCount > 0 ? $"🔖{source.BookmarkCount}" : "";
-        OffsetText = (v.AvOffsetMs, inheritedOffsetMs) switch
-        {
-            ({ } own, _) when own != 0 => $"⏱{own:+0;-0} ms",
-            (null, { } inherited) when inherited != 0 => $"⏱{inherited:+0;-0} ms (폴더)",
-            _ => "",
-        };
+        OffsetText = v.AvOffsetMs is { } ms and not 0 ? $"⏱{ms:+0;-0} ms" : "";
         SpeedText = v.LastSpeed is { } s && Math.Abs(s - 1.0) > 0.001 ? $"{s:0.##}x" : "";
         TagsText = string.Join("  ", source.Tags.Select(t => "#" + t));
         Thumbnail = IsMissing ? null : LoadThumbnail(thumbnailPath);

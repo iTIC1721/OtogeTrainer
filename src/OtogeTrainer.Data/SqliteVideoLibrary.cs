@@ -260,11 +260,6 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         return removed;
     }
 
-    public Task SetFolderDefaultOffsetAsync(long folderId, int? offsetMs, CancellationToken ct = default)
-        => ExecuteAsync(
-            "UPDATE folders SET default_av_offset_ms = $ms WHERE id = $id;", ct,
-            ("$ms", offsetMs is { } ms ? OffsetRules.Clamp(ms) : DBNull.Value), ("$id", folderId));
-
     public Task MarkFolderScannedAsync(long folderId, DateTimeOffset at, CancellationToken ct = default)
         => ExecuteAsync(
             "UPDATE folders SET last_scan_at = $at WHERE id = $id;", ct,
@@ -386,7 +381,7 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
-            $"SELECT id, path, default_av_offset_ms, added_at, last_scan_at FROM folders {where} " +
+            $"SELECT id, path, added_at, last_scan_at FROM folders {where} " +
             "ORDER BY path COLLATE NOCASE;";
         foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value);
 
@@ -397,9 +392,8 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
             list.Add(new LibraryFolder(
                 reader.GetInt64(0),
                 reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetInt32(2),
-                ParseTime(reader.GetString(3)),
-                reader.IsDBNull(4) ? null : ParseTime(reader.GetString(4))));
+                ParseTime(reader.GetString(2)),
+                reader.IsDBNull(3) ? null : ParseTime(reader.GetString(3))));
         }
         return list;
     }

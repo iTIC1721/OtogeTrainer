@@ -110,9 +110,9 @@
                     ToolTip="재생 중 동작 키 바꾸기" />
             <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
                     Command="{Binding ManageFoldersCommand}"
-                    ToolTip="녹화 폴더 등록 · 폴더별 기본 오프셋">
+                    ToolTip="녹화 영상이 저장되는 폴더를 등록하면 새 영상을 자동으로 올립니다">
                 <TextBlock>
-                    <Run Text="📁  폴더" />
+                    <Run Text="💾  녹화 폴더" />
                     <Run Text="{Binding FolderCount, Mode=OneWay}" Foreground="{StaticResource Fg1}" />
                 </TextBlock>
             </Button>

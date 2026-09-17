@@ -341,7 +341,7 @@ internal static class SmokeTest
             Emit("5-3. 설정에서 키 바꾸기 · 저장");
 
             // 설정 창의 키 입력 대기를 실제 키 이벤트로 거친다
-            var settingsVm = new Settings.SettingsViewModel(shell.KeyMap);
+            var settingsVm = new Settings.SettingsViewModel(shell.KeyMap, shell.OffsetPresets);
             var settingsWindow = new Settings.SettingsWindow(settingsVm) { Owner = window };
             settingsWindow.Show();
             await Task.Delay(300);
@@ -664,7 +664,7 @@ internal static class SmokeTest
 
             // ── 9-2. 폴더 · 검색 · 태그 · 폴더 오프셋 ─────────────────────────
             Emit("");
-            Emit("9-2. 폴더 · 검색 · 태그 · 폴더별 기본 오프셋 (FR-104 / 106 / 107 / 405)");
+            Emit("9-2. 녹화 폴더 · 검색 · 태그 · 오프셋 프리셋 (FR-104 / 106 / 107 · D-9)");
             shell.Notice = null;
             var assetDir = Path.GetDirectoryName(clip)!;
             var assetCount = Directory.EnumerateFiles(assetDir).Count(Core.Library.VideoFiles.IsVideo);
@@ -712,12 +712,8 @@ internal static class SmokeTest
             Check(shell.Library.Videos[0].Title.StartsWith("avsync") && shell.Library.Sorts[2].IsSelected,
                   "제목 순 정렬", shell.Library.Videos[0].Title);
 
-            await foldersVm.SetOffsetAsync(foldersVm.Folders[0], 50);
             await shell.Library.RefreshAsync();
             var thirty = shell.Library.Videos.First(v => v.Title.StartsWith("frametest_30"));
-            var sixty = shell.Library.Videos.First(v => v.Path == clip);
-            Check(thirty.OffsetText == "⏱+50 ms (폴더)" && sixty.OffsetText == "⏱+33 ms",
-                  "카드: 폴더값 / 영상별 값 구분", $"{thirty.OffsetText} · {sixty.OffsetText}");
             await Task.Delay(300);
             Capture(window, "m2-library.png");
 
@@ -726,8 +722,6 @@ internal static class SmokeTest
             foldersWindow.Show();
             await WaitUntil(() => foldersWindow.ViewModel.Folders.Count == 1);
             await Task.Delay(300);
-            Check(foldersWindow.ViewModel.Folders[0].OffsetText == "+50 ms", "폴더 창: 기본 오프셋 표시",
-                  foldersWindow.ViewModel.Folders[0].OffsetText);
             Capture(foldersWindow, "m2-folders.png");
             foldersWindow.Close();
 
@@ -738,28 +732,37 @@ internal static class SmokeTest
             Capture(tagWindow, "m2-tags.png");
             tagWindow.Close();
 
+            // ── 오프셋 프리셋 (D-9) ──
+            var capturePreset = shell.OffsetPresets.Add("캡처보드 A", 50)!;
             await shell.Library.OpenVideoCommand.ExecuteAsync(thirty);
             await WaitUntil(() => player.HasVideo);
-            Check(engine.AudioDelayMs == 50 && player.OffsetSourceText == "폴더 기본값" && !player.CanFollowFolderOffset,
-                  "조정 안 한 영상은 폴더 기본값 +50", $"{engine.AudioDelayMs} {player.OffsetSourceText}");
+            Check(engine.AudioDelayMs == 0, "조정한 적 없는 영상은 0 (상속 없음)", $"{engine.AudioDelayMs}");
+            player.ApplyOffsetPreset(capturePreset);
+            Check(engine.AudioDelayMs == 50 && player.OffsetMs == 50, "프리셋 적용 → +50", $"{engine.AudioDelayMs}");
             player.AdjustOffset(-5);
-            Check(engine.AudioDelayMs == 45 && player.OffsetSourceText == "" && player.CanFollowFolderOffset,
-                  "조정하면 영상별 값이 됨", $"{engine.AudioDelayMs}");
+            var added = player.AddCurrentOffsetAsPreset();
+            Check(added is { OffsetMs: 45, Name: "프리셋 2" } && shell.OffsetPresets.Items.Count == 2,
+                  "지금 값을 프리셋으로 추가", $"{added?.Name} {added?.OffsetText}");
+            capturePreset.OffsetMs = 60;
+            Check(engine.AudioDelayMs == 45, "프리셋 값을 고쳐도 적용한 영상은 그대로 (복사)", $"{engine.AudioDelayMs}");
             await Task.Delay(300);
             Capture(window, "m2-player-offset.png");
-            player.FollowFolderOffset();
-            Check(engine.AudioDelayMs == 50 && player.OffsetSourceText == "폴더 기본값",
-                  "폴더값으로 되돌리기", $"{engine.AudioDelayMs}");
+
+            var presetSettings = new Settings.SettingsWindow(new Settings.SettingsViewModel(shell.KeyMap, shell.OffsetPresets)) { Owner = window };
+            presetSettings.Show();
+            await Task.Delay(400);
+            Capture(presetSettings, "m2-settings-presets.png");
+            presetSettings.Close();
             await shell.BackToLibraryAsync();
 
-            await shell.Library.OpenVideoCommand.ExecuteAsync(shell.Library.Videos.First(v => v.Path == clip));
-            await WaitUntil(() => player.HasVideo);
-            Check(engine.AudioDelayMs == 33, "영상별 값(+33)이 폴더 기본값보다 우선", $"{engine.AudioDelayMs}");
-            await shell.BackToLibraryAsync();
+            await Task.Delay(ShellViewModel.AudioSaveDelay + TimeSpan.FromMilliseconds(400));
+            var savedPresets = new Settings.SettingsStore(paths.SettingsPath).Load(out _).OffsetPresets.Items;
+            Check(savedPresets.Count == 2 && savedPresets[0] is { Name: "캡처보드 A", OffsetMs: 60 } && savedPresets[1].OffsetMs == 45,
+                  "프리셋이 설정 파일에 저장", string.Join(", ", savedPresets.Select(p => $"{p.Name} {p.OffsetText}")));
 
-            await Task.Delay(200);   // 되돌리기 저장은 비동기
             var thirtyRecord = (await folderLib.QueryAsync(new Core.Library.VideoQuery("frametest_30")))[0].Video;
-            Check(thirtyRecord.AvOffsetMs is null, "되돌린 영상은 DB 에도 영상별 값 없음", $"{thirtyRecord.AvOffsetMs}");
+            Check(thirtyRecord.AvOffsetMs == 45 && shell.Library.Videos.First(v => v.Title.StartsWith("frametest_30")).OffsetText == "⏱+45 ms",
+                  "영상 오프셋은 DB · 카드에 반영", $"{thirtyRecord.AvOffsetMs}");
 
             await foldersVm.RemoveAsync(foldersVm.Folders[0]);
             await shell.Library.RefreshAsync();

@@ -195,18 +195,50 @@ public sealed class FolderAndTagTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task 폴더_기본_오프셋을_지정하고_해제한다()
+    public async Task v2_DB의_폴더_기본_오프셋은_물려받던_영상에_굳혀진다()
     {
-        var f = await _lib.AddFolderAsync(@"D:\rec");
-        await _lib.SetFolderDefaultOffsetAsync(f.Id, 5000);
-        Assert.Equal(1000, (await _lib.GetFoldersAsync())[0].DefaultOffsetMs);   // 범위로 잘린다
+        var path = Path.Combine(_dir, "v2.db");
 
-        await _lib.SetFolderDefaultOffsetAsync(f.Id, null);
-        Assert.Null((await _lib.GetFoldersAsync())[0].DefaultOffsetMs);
+        await using (var conn = new SqliteConnection($"Data Source={path}"))
+        {
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = Migrations.All[0].Sql + Migrations.All[1].Sql + """
+                PRAGMA user_version = 2;
+                INSERT INTO folders (path, default_av_offset_ms, added_at) VALUES
+                    ('D:\rec', 33, '2026-09-01T00:00:00.0000000+00:00'),
+                    ('D:\rec\iidx', 10, '2026-09-01T00:00:00.0000000+00:00'),
+                    ('D:\plain', NULL, '2026-09-01T00:00:00.0000000+00:00'),
+                    ('E:\', 7, '2026-09-01T00:00:00.0000000+00:00');
+                INSERT INTO videos (fingerprint, path, title, file_size, added_at, av_offset_ms) VALUES
+                    ('1:a', 'D:\rec\a.mp4', 'a', 1, '2026-09-01T00:00:00.0000000+00:00', NULL),
+                    ('1:b', 'd:\REC\iidx\b.mp4', 'b', 1, '2026-09-01T00:00:00.0000000+00:00', NULL),
+                    ('1:c', 'D:\rec\c.mp4', 'c', 1, '2026-09-01T00:00:00.0000000+00:00', -20),
+                    ('1:d', 'D:\recording\d.mp4', 'd', 1, '2026-09-01T00:00:00.0000000+00:00', NULL),
+                    ('1:e', 'D:\plain\e.mp4', 'e', 1, '2026-09-01T00:00:00.0000000+00:00', NULL),
+                    ('1:f', 'E:\f.mp4', 'f', 1, '2026-09-01T00:00:00.0000000+00:00', NULL);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var db = new LibraryDatabase(path);
+        await db.MigrateAsync();
+        var lib = new SqliteVideoLibrary(db, _clock);
+
+        async Task<int?> Offset(string title)
+            => (await lib.QueryAsync(new VideoQuery(Sort: VideoSort.Title))).Single(i => i.Video.Title == title).Video.AvOffsetMs;
+
+        Assert.Equal(33, await Offset("a"));
+        Assert.Equal(10, await Offset("b"));     // 가장 가까운 폴더 · 대소문자 무시
+        Assert.Equal(-20, await Offset("c"));    // 영상별 값은 그대로
+        Assert.Null(await Offset("d"));          // 이름 앞부분만 같은 다른 폴더
+        Assert.Null(await Offset("e"));          // 기본값 없는 폴더
+        Assert.Equal(7, await Offset("f"));      // 드라이브 루트
+        Assert.Equal(4, (await lib.GetFoldersAsync()).Count);
     }
 
     [Fact]
-    public async Task 영상별_오프셋을_지우면_폴더값을_따르게_된다()
+    public async Task 영상별_오프셋을_지울_수_있다()
     {
         var v = await Register(@"D:\rec\a.mp4");
         await _lib.SaveOffsetAsync(v.Id, 20);

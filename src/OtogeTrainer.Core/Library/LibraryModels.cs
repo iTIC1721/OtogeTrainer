@@ -20,9 +20,7 @@ public sealed record VideoRecord
     public int PlayCount { get; init; }
     public long LastPositionMs { get; init; }
 
-    /// <summary>
-    /// 영상별 오프셋. null 이면 폴더 기본값을 상속한다(FR-405, <see cref="FolderRules.InheritedOffset"/>).
-    /// </summary>
+    /// <summary>영상별 오프셋. null 이면 조정한 적 없음(= 0). 상속은 없다 (D-9).</summary>
     public int? AvOffsetMs { get; init; }
 
     public double? LastSpeed { get; init; }
@@ -37,11 +35,9 @@ public sealed record Bookmark(int Slot, long PositionMs, string? Label = null);
 /// <summary>목록 카드에 필요한 것. (FR-102 · FR-106 · FR-107)</summary>
 public sealed record LibraryItem(VideoRecord Video, int BookmarkCount, IReadOnlyList<string> Tags);
 
-/// <summary>등록된 폴더. (FR-104 · FR-405)</summary>
+/// <summary>등록된 녹화 폴더. (FR-104)</summary>
 /// <param name="Path">정규화된 전체 경로. 끝에 구분자가 없다.</param>
-/// <param name="DefaultOffsetMs">이 폴더 아래 영상의 기본 오프셋. null 이면 지정 안 함.</param>
-public sealed record LibraryFolder(
-    long Id, string Path, int? DefaultOffsetMs, DateTimeOffset AddedAt, DateTimeOffset? LastScanAt);
+public sealed record LibraryFolder(long Id, string Path, DateTimeOffset AddedAt, DateTimeOffset? LastScanAt);
 
 public sealed record TagCount(string Name, int Count);
 
@@ -85,7 +81,7 @@ public interface IVideoLibrary
 
     Task SavePlaybackStateAsync(long videoId, long positionMs, double speed, CancellationToken ct = default);
 
-    /// <summary>영상별 오프셋. null 이면 영상별 값을 지우고 폴더 기본값을 따른다. (FR-405)</summary>
+    /// <summary>영상별 오프셋. null 이면 지운다(= 0).</summary>
     Task SaveOffsetAsync(long videoId, int? offsetMs, CancellationToken ct = default);
 
     Task<IReadOnlyList<Bookmark>> GetBookmarksAsync(long videoId, CancellationToken ct = default);
@@ -97,7 +93,7 @@ public interface IVideoLibrary
     /// <summary>목록에서만 제거한다. 파일은 건드리지 않는다. (FR-108)</summary>
     Task RemoveAsync(long videoId, CancellationToken ct = default);
 
-    // ── 폴더 (FR-104 · FR-405) ──────────────────────────────────────────────
+    // ── 녹화 폴더 (FR-104) ──────────────────────────────────────────────────
 
     Task<IReadOnlyList<LibraryFolder>> GetFoldersAsync(CancellationToken ct = default);
 
@@ -110,8 +106,6 @@ public interface IVideoLibrary
     /// </summary>
     /// <returns>목록에서 뺀 영상 수.</returns>
     Task<int> RemoveFolderAsync(long folderId, CancellationToken ct = default);
-
-    Task SetFolderDefaultOffsetAsync(long folderId, int? offsetMs, CancellationToken ct = default);
 
     Task MarkFolderScannedAsync(long folderId, DateTimeOffset at, CancellationToken ct = default);
 

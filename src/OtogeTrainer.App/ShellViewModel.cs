@@ -24,8 +24,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public ShellViewModel(
         LibraryViewModel library, PlayerViewModel player, IVideoLibrary videoLibrary,
-        PlaybackKeyMap keyMap, SettingsStore settings)
+        PlaybackKeyMap keyMap, OffsetPresetList offsetPresets, SettingsStore settings)
     {
+        OffsetPresets = offsetPresets;
         Library = library;
         Player = player;
         _library = videoLibrary;
@@ -38,11 +39,8 @@ public sealed partial class ShellViewModel : ObservableObject
         // 볼륨은 슬라이더를 끄는 동안 계속 바뀌므로 멈춘 뒤 한 번만 쓴다.
         _audioSaveDelay = new System.Windows.Threading.DispatcherTimer { Interval = AudioSaveDelay };
         _audioSaveDelay.Tick += (_, _) => SaveSettings();
-        Player.AudioSettingsChanged += (_, _) =>
-        {
-            _audioSaveDelay.Stop();
-            _audioSaveDelay.Start();
-        };
+        Player.AudioSettingsChanged += (_, _) => SaveSettingsSoon();
+        OffsetPresets.Changed += (_, _) => SaveSettingsSoon();   // 이름을 치는 동안 매 글자 쓰지 않게
 
         Library.OpenPath = OpenPathAsync;
         Library.Notify = message => Notice = message;
@@ -64,6 +62,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>재생 중 동작 키 배치. 입력 가드 · 플레이어 · 설정 창이 같은 객체를 본다. (D-8)</summary>
     public PlaybackKeyMap KeyMap { get; }
+
+    /// <summary>오프셋 프리셋. 설정 창 · 플레이어가 같은 객체를 본다. (D-9)</summary>
+    public OffsetPresetList OffsetPresets { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLibraryScreen), nameof(IsPlayerScreen))]
@@ -110,9 +111,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
             if (IsPlayerScreen) await Player.CloseAsync();
             Screen = Screen.Player;
-            // 영상별 오프셋이 없으면 폴더 기본값을 따른다 (FR-405)
-            var inherited = FolderRules.InheritedOffset(await _library.GetFoldersAsync(), record.Path);
-            await Player.OpenAsync(record, inherited);
+            await Player.OpenAsync(record);
 
             if (Player.ErrorMessage is { } error)
             {
@@ -158,7 +157,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings()
     {
-        var window = new SettingsWindow(new SettingsViewModel(KeyMap)) { Owner = System.Windows.Application.Current.MainWindow };
+        var window = new SettingsWindow(new SettingsViewModel(KeyMap, OffsetPresets)) { Owner = System.Windows.Application.Current.MainWindow };
         window.ShowDialog();
     }
 
@@ -194,10 +193,16 @@ public sealed partial class ShellViewModel : ObservableObject
         return IsPlayerScreen && Player.HandleShortcut(ctx);
     }
 
+    private void SaveSettingsSoon()
+    {
+        _audioSaveDelay.Stop();
+        _audioSaveDelay.Start();
+    }
+
     private void SaveSettings()
     {
         _audioSaveDelay.Stop();
-        try { _settings.Save(KeyMap, Player.Volume, Player.IsMuted); }
+        try { _settings.Save(KeyMap, Player.Volume, Player.IsMuted, OffsetPresets); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Notice = $"설정을 저장하지 못했습니다: {ex.Message}";

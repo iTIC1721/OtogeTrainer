@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using OtogeTrainer.App.Settings;
 using OtogeTrainer.Core.Playback;
 using OtogeTrainer.Playback;
 
@@ -37,6 +38,46 @@ public partial class PlayerView : UserControl
     internal Slider TimelineSlider => Timeline;
 
     internal Slider VolumeSliderControl => VolumeSlider;
+
+    // ── 오프셋 프리셋 (D-9) ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 프리셋 메뉴는 누를 때마다 목록으로 새로 만든다. 설정 창에서 바뀐 이름 · 값이 바로 반영되고,
+    /// 지금 오프셋과 같은 프리셋에 체크가 붙는다.
+    /// </summary>
+    private void OnOffsetPresetsClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm) return;
+
+        var menu = new ContextMenu { PlacementTarget = OffsetPresetButton, Placement = PlacementMode.Top };
+        foreach (var preset in vm.OffsetPresets.Items)
+        {
+            var item = new MenuItem
+            {
+                Header = $"{preset.Name}    {preset.OffsetText}",
+                IsChecked = vm.HasVideo && preset.OffsetMs == vm.OffsetMs,
+                IsEnabled = vm.HasVideo,
+            };
+            item.Click += (_, _) => vm.ApplyOffsetPreset(preset);
+            menu.Items.Add(item);
+        }
+
+        if (vm.OffsetPresets.Items.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "저장된 프리셋이 없습니다", IsEnabled = false });
+
+        menu.Items.Add(new Separator());
+        var add = new MenuItem
+        {
+            Header = vm.OffsetPresets.CanAdd
+                ? $"지금 값({vm.OffsetText})을 프리셋으로 추가"
+                : $"프리셋은 {OffsetPresetList.MaxCount}개까지입니다 (설정에서 정리)",
+            IsEnabled = vm.OffsetPresets.CanAdd,
+        };
+        add.Click += (_, _) => vm.AddCurrentOffsetAsPreset();
+        menu.Items.Add(add);
+
+        menu.IsOpen = true;
+    }
 
     // ── 전체화면 떠 있는 컨트롤 ──────────────────────────────────────────────
 

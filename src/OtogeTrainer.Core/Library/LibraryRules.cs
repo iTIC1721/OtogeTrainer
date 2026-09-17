@@ -11,7 +11,7 @@ public static class VideoFiles
     public static bool IsVideo(string path) => Extensions.Contains(Path.GetExtension(path));
 }
 
-/// <summary>폴더 경로 규칙과 오프셋 상속. (FR-104 · FR-405)</summary>
+/// <summary>녹화 폴더 경로 규칙. (FR-104)</summary>
 public static class FolderRules
 {
     /// <summary>전체 경로로 바꾸고 끝의 구분자를 뗀다. <c>D:\rec\</c> 와 <c>D:\rec</c> 를 같게 본다.</summary>
@@ -40,24 +40,6 @@ public static class FolderRules
                || file[dir.Length] == Path.DirectorySeparatorChar
                || file[dir.Length] == Path.AltDirectorySeparatorChar;
     }
-
-    /// <summary>
-    /// 파일에 적용할 폴더 기본 오프셋. 파일을 포함하는 폴더 중 <b>기본값이 지정된 가장 가까운 폴더</b>를 따른다.
-    /// <para>
-    /// 예: <c>D:\rec</c> (+33) 아래 <c>D:\rec\iidx</c> (지정 안 함) 가 있으면 iidx 의 영상은 +33 을 받는다.
-    /// iidx 에 +10 을 지정하면 iidx 의 영상만 +10.
-    /// </para>
-    /// </summary>
-    public static int? InheritedOffset(IEnumerable<LibraryFolder> folders, string filePath)
-        => folders
-            .Where(f => f.DefaultOffsetMs is not null && Contains(f.Path, filePath))
-            .MaxBy(f => f.Path.Length)
-            ?.DefaultOffsetMs;
-
-    /// <summary>
-    /// 실제로 적용할 오프셋. 영상별 값 &gt; 폴더 기본값 &gt; 0. (FR-405)
-    /// </summary>
-    public static int EffectiveOffset(int? videoOverride, int? inherited) => videoOverride ?? inherited ?? 0;
 }
 
 /// <summary>태그 입력 규칙. (FR-107)</summary>

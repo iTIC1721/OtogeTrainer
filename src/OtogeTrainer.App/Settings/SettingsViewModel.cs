@@ -7,16 +7,18 @@ using OtogeTrainer.Input;
 namespace OtogeTrainer.App.Settings;
 
 /// <summary>
-/// 설정 창. 지금은 재생 중 동작 키만 있다. (D-8, FR-701 의 일부를 M1 로 당김)
+/// 설정 창. 재생 중 동작 키(D-8)와 오프셋 프리셋(D-9).
 /// <para>바꾸는 즉시 적용 · 저장된다. 확인 · 취소 버튼이 없다.</para>
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly PlaybackKeyMap _map;
 
-    public SettingsViewModel(PlaybackKeyMap map)
+    public SettingsViewModel(PlaybackKeyMap map, OffsetPresetList offsetPresets)
     {
         _map = map;
+        OffsetPresets = offsetPresets;
+        OffsetPresets.Items.CollectionChanged += (_, _) => AddPresetCommand.NotifyCanExecuteChanged();
         foreach (var action in KeyText.DisplayOrder)
             Bindings.Add(new KeyBindingItem(action));
         Refresh();
@@ -98,6 +100,25 @@ public sealed partial class SettingsViewModel : ObservableObject
         Notice = "기본 배치(F1 ~ F7 · F11)로 되돌렸습니다.";
     }
 
+    // ── 오프셋 프리셋 (D-9) ──────────────────────────────────────────────────
+
+    public OffsetPresetList OffsetPresets { get; }
+
+    [RelayCommand(CanExecute = nameof(CanAddPreset))]
+    private void AddPreset()
+    {
+        Capturing = null;
+        OffsetPresets.Add(null, 0);
+    }
+
+    private bool CanAddPreset() => OffsetPresets.CanAdd;
+
+    [RelayCommand]
+    private void RemovePreset(OffsetPreset preset) => OffsetPresets.Remove(preset);
+
+    [RelayCommand]
+    private void AdjustPreset(PresetStep step) => step.Preset.OffsetMs += step.DeltaMs;
+
     private void Refresh()
     {
         foreach (var item in Bindings)
@@ -122,4 +143,19 @@ public sealed partial class KeyBindingItem(PlaybackAction action) : ObservableOb
     public string KeyDisplay => IsCapturing ? "키를 누르세요…" : KeyText.Of(Key);
     public bool IsUnbound => Key is null;
     public bool IsDefault => Key == PlaybackKeyMap.Defaults[Action];
+}
+
+/// <summary>프리셋 값 증감 버튼 하나. XAML 에서 프리셋과 증감량을 함께 넘기려고 묶는다.</summary>
+public sealed record PresetStep(OffsetPreset Preset, int DeltaMs);
+
+/// <summary><see cref="PresetStep"/> 목록을 프리셋마다 만든다.</summary>
+public sealed class PresetStepsConverter : System.Windows.Data.IValueConverter
+{
+    public static readonly PresetStepsConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => value is OffsetPreset p ? new[] { new PresetStep(p, -5), new PresetStep(p, -1), new PresetStep(p, 1), new PresetStep(p, 5) } : Array.Empty<PresetStep>();
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException();
 }

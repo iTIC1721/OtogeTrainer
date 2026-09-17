@@ -4,7 +4,7 @@
         xmlns:app="clr-namespace:OtogeTrainer.App"
         xmlns:settings="clr-namespace:OtogeTrainer.App.Settings"
         Title="설정 — OtogeTrainer"
-        Width="620" SizeToContent="Height"
+        Width="620" SizeToContent="Height" MaxHeight="940"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{StaticResource Bg0}" FontFamily="{StaticResource UiFont}"
         UseLayoutRounding="True">
@@ -13,6 +13,7 @@
         <app:HasValueToVisibilityConverter x:Key="HasValue" />
     </Window.Resources>
 
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
     <StackPanel Margin="24,20,24,20">
         <TextBlock Text="재생 중 동작 키" FontSize="17" FontWeight="SemiBold" />
         <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
@@ -65,14 +66,75 @@
             <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" FontSize="12.5" />
         </Border>
 
-        <DockPanel Margin="0,18,0,0">
+        <Button Margin="0,12,0,0" Content="키 배치를 모두 기본값으로" HorizontalAlignment="Left"
+                Command="{Binding ResetAllCommand}" />
+
+        <TextBlock Margin="0,10,0,0" Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
+                   Text="다른 동작이 쓰던 키를 고르면 두 동작의 키를 맞바꿉니다. Alt · Shift 같은 수정자 키도 지정할 수 있지만, 다른 수정자와 함께 누르면 동작하지 않습니다 (Alt+F4 창 닫기와 겹치지 않도록)." />
+
+        <!-- ── 오프셋 프리셋 (D-9) ── -->
+        <DockPanel Margin="0,28,0,0">
+            <Button DockPanel.Dock="Right" Content="＋  프리셋 추가" Command="{Binding AddPresetCommand}" />
+            <TextBlock Text="오프셋 프리셋" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </DockPanel>
+        <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
+                   Text="캡처 장치 · 게임별로 자주 쓰는 오프셋에 이름을 붙여 두세요. 플레이어의 [프리셋 ▾] 에서 영상에 적용합니다. 적용은 값을 복사하는 것이라, 나중에 프리셋을 고쳐도 이미 적용한 영상은 바뀌지 않습니다. 최대 8개." />
+
+        <Border Margin="0,12,0,0" Background="{StaticResource Bg1}" CornerRadius="6" Padding="8">
+            <Grid>
+                <TextBlock Text="프리셋이 없습니다. 플레이어에서 [프리셋 ▾] → 지금 값을 추가하거나 위의 버튼으로 만드세요."
+                           FontSize="12.5" Margin="8,12" TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding OffsetPresets.Items.Count}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <ItemsControl x:Name="PresetList" ItemsSource="{Binding OffsetPresets.Items}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type settings:OffsetPreset}">
+                            <DockPanel Margin="8,5">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RemovePresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" ToolTip="이 프리셋 삭제">
+                                    <TextBlock Text="삭제" Foreground="{StaticResource Danger}" />
+                                </Button>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding OffsetText}" Style="{StaticResource MonoText}"
+                                           FontSize="14" MinWidth="80" Margin="10,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource Warn}" TextAlignment="Right" />
+                                <ItemsControl DockPanel.Dock="Right" Focusable="False" Margin="10,0,0,0"
+                                              ItemsSource="{Binding Converter={x:Static settings:PresetStepsConverter.Instance}}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type settings:PresetStep}">
+                                            <Button Margin="0,0,4,0" MinWidth="40" Padding="6,3"
+                                                    Content="{Binding DeltaMs}" ContentStringFormat="{}{0:+0;−0}"
+                                                    Command="{Binding DataContext.AdjustPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="20"
+                                         VerticalAlignment="Center" ToolTip="프리셋 이름 (예: 캡처보드 A, IIDX 컨트롤러)" />
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+
+        <DockPanel Margin="0,20,0,0">
             <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="닫기" MinWidth="88"
                     Click="OnClose" />
-            <Button DockPanel.Dock="Left" Content="모두 기본값으로" HorizontalAlignment="Left"
-                    Command="{Binding ResetAllCommand}" />
+            <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="변경은 바로 저장됩니다." />
         </DockPanel>
-
-        <TextBlock Margin="0,14,0,0" Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
-                   Text="변경은 즉시 저장됩니다. 다른 동작이 쓰던 키를 고르면 두 동작의 키를 맞바꿉니다. Alt · Shift 같은 수정자 키도 지정할 수 있지만, 다른 수정자와 함께 누르면 동작하지 않습니다 (Alt+F4 창 닫기와 겹치지 않도록)." />
     </StackPanel>
+    </ScrollViewer>
 </Window>

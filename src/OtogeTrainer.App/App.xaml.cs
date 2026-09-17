@@ -71,9 +71,10 @@ public partial class App : Application
         var surface = new VideoSurfaceHost();
         _engine = new MpvMediaEngine(surface);
 
-        var player = new PlayerViewModel(_engine, library, _paths, keyMap);
+        var player = new PlayerViewModel(_engine, library, _paths, keyMap, loadedSettings.OffsetPresets);
         player.RestoreAudio(loadedSettings.Volume, loadedSettings.Muted);
-        var shell = new ShellViewModel(new LibraryViewModel(library, _paths), player, library, keyMap, settingsStore);
+        var shell = new ShellViewModel(
+            new LibraryViewModel(library, _paths), player, library, keyMap, loadedSettings.OffsetPresets, settingsStore);
         if (settingsError is not null) shell.Notice = settingsError;
         var window = new MainWindow(shell, surface);
         MainWindow = window;

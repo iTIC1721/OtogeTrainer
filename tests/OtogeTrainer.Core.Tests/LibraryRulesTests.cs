@@ -5,9 +5,6 @@ namespace OtogeTrainer.Core.Tests;
 
 public sealed class FolderRulesTests
 {
-    private static LibraryFolder Folder(string path, int? offset)
-        => new(path.GetHashCode(), path, offset, DateTimeOffset.UnixEpoch, null);
-
     [Theory]
     [InlineData(@"D:\rec\", @"D:\rec")]
     [InlineData(@"D:\rec", @"D:\rec")]
@@ -27,30 +24,6 @@ public sealed class FolderRulesTests
     [InlineData(@"D:\", @"D:\rec\a.mp4", true)]
     public void 폴더_포함_여부는_경계를_지킨다(string folder, string file, bool expected)
         => Assert.Equal(expected, FolderRules.Contains(folder, file));
-
-    [Fact]
-    public void 기본값이_지정된_가장_가까운_폴더를_따른다()
-    {
-        var folders = new[]
-        {
-            Folder(@"D:\rec", 33),
-            Folder(@"D:\rec\iidx", null),
-            Folder(@"D:\rec\sdvx", 10),
-        };
-
-        Assert.Equal(33, FolderRules.InheritedOffset(folders, @"D:\rec\a.mp4"));
-        Assert.Equal(33, FolderRules.InheritedOffset(folders, @"D:\rec\iidx\a.mp4"));   // 지정 안 한 하위 폴더는 위를 따른다
-        Assert.Equal(10, FolderRules.InheritedOffset(folders, @"D:\rec\sdvx\x\a.mp4"));
-        Assert.Null(FolderRules.InheritedOffset(folders, @"E:\other\a.mp4"));
-    }
-
-    [Theory]
-    [InlineData(20, 33, 20)]
-    [InlineData(0, 33, 0)]        // 영상별 0 도 명시적인 값이다
-    [InlineData(null, 33, 33)]
-    [InlineData(null, null, 0)]
-    public void 영상별_값이_폴더_기본값보다_우선한다(int? video, int? inherited, int expected)
-        => Assert.Equal(expected, FolderRules.EffectiveOffset(video, inherited));
 }
 
 public sealed class TagRulesTests

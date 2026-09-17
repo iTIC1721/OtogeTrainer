@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:app="clr-namespace:OtogeTrainer.App"
         xmlns:lib="clr-namespace:OtogeTrainer.App.Library"
-        Title="폴더 — OtogeTrainer"
+        Title="녹화 폴더 — OtogeTrainer"
         Width="720" SizeToContent="Height" MaxHeight="760"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{StaticResource Bg0}" FontFamily="{StaticResource UiFont}"
@@ -19,10 +19,10 @@
             <DockPanel>
                 <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="＋  폴더 추가"
                         Command="{Binding AddCommand}" />
-                <TextBlock Text="폴더" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="녹화 폴더" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
             <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" FontSize="12.5" TextWrapping="Wrap"
-                       Text="녹화 폴더를 등록하면 앱을 켤 때마다 새 영상을 찾아 목록에 올립니다 (하위 폴더 포함). 기본 오프셋은 그 폴더 아래 영상 중 영상별 오프셋을 조정하지 않은 영상에 적용됩니다. 녹화 환경(캡처 장치 · 게임)별로 폴더를 나눠 두면 편합니다." />
+                       Text="녹화 영상이 저장되는 폴더를 등록하면 앱을 켤 때마다 새 영상을 찾아 라이브러리에 올립니다 (하위 폴더 포함)." />
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Bottom">
@@ -72,37 +72,8 @@
                                         <TextBlock Text="등록 해제" Foreground="{StaticResource Danger}" />
                                     </Button>
 
-                                    <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
-                                        <TextBlock Text="기본 오프셋" Style="{StaticResource Caption}" Margin="0,0,10,0" />
-                                        <ItemsControl ItemsSource="{Binding Steps}" Focusable="False">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate DataType="{x:Type lib:FolderOffsetStep}">
-                                                    <Button Margin="0,0,4,0" MinWidth="40" Padding="8,3"
-                                                            Content="{Binding DeltaMs}" ContentStringFormat="{}{0:+0;−0}"
-                                                            Command="{Binding DataContext.AdjustOffsetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <TextBlock x:Name="OffsetValue" Text="{Binding OffsetText}" Style="{StaticResource MonoText}"
-                                                   FontSize="14" MinWidth="96" Margin="8,0" VerticalAlignment="Center" />
-                                        <Button Style="{StaticResource GhostButton}" Content="지정 안 함으로"
-                                                Command="{Binding DataContext.ClearOffsetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"
-                                                Visibility="{Binding HasOffset, Converter={StaticResource BoolToVisibility}}"
-                                                ToolTip="이 폴더는 기본 오프셋을 정하지 않습니다 (상위 폴더에 있으면 그것을 따릅니다)" />
-                                    </WrapPanel>
                                 </Grid>
                                 <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding HasOffset}" Value="False">
-                                        <Setter TargetName="OffsetValue" Property="Foreground" Value="{StaticResource Fg2}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding HasOffset}" Value="True">
-                                        <Setter TargetName="OffsetValue" Property="Foreground" Value="{StaticResource Warn}" />
-                                    </DataTrigger>
                                     <DataTrigger Binding="{Binding Exists}" Value="False">
                                         <Setter TargetName="PathText" Property="Opacity" Value="0.55" />
                                         <Setter TargetName="ScanText" Property="Text" Value="⚠ 폴더를 찾을 수 없음 (외장 디스크가 빠졌거나 이름이 바뀜)" />

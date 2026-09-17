@@ -41,8 +41,10 @@ public sealed partial class PlayerViewModel : ObservableObject
     private static readonly TimeSpan ScrubSeekInterval = TimeSpan.FromMilliseconds(80);
 
     public PlayerViewModel(
-        IMediaEngine engine, IVideoLibrary library, AppPaths paths, PlaybackKeyMap keyMap, TimeProvider? clock = null)
+        IMediaEngine engine, IVideoLibrary library, AppPaths paths, PlaybackKeyMap keyMap, OffsetPresetList offsetPresets,
+        TimeProvider? clock = null)
     {
+        OffsetPresets = offsetPresets;
         _engine = engine;
         _library = library;
         _paths = paths;
@@ -112,17 +114,6 @@ public sealed partial class PlayerViewModel : ObservableObject
         ? $"≈{OffsetRules.ToFrames(OffsetMs, fps):+0.0;-0.0} f"
         : "";
 
-    /// <summary>열린 영상이 속한 폴더의 기본 오프셋. 없으면 null.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(OffsetSourceText), nameof(CanFollowFolderOffset))]
-    private int? _inheritedOffsetMs;
-
-    /// <summary>지금 오프셋이 어디서 왔는지. 폴더 기본값을 쓸 때만 밝힌다.</summary>
-    public string OffsetSourceText => Current is { AvOffsetMs: null } && InheritedOffsetMs is not null ? "폴더 기본값" : "";
-
-    /// <summary>영상별로 조정했고 폴더 기본값이 있어서, 폴더 값으로 되돌릴 수 있다.</summary>
-    public bool CanFollowFolderOffset => Current is { AvOffsetMs: not null } && InheritedOffsetMs is not null;
-
     public bool HasVideo => Current is not null && !IsLoading;
 
     /// <summary>재생 중이라 앱 단축키가 막혀 있는가. 배지 표시용. (FR-505)</summary>
@@ -135,8 +126,6 @@ public sealed partial class PlayerViewModel : ObservableObject
 
     partial void OnCurrentChanged(VideoRecord? value)
     {
-        OnPropertyChanged(nameof(OffsetSourceText));
-        OnPropertyChanged(nameof(CanFollowFolderOffset));
         OnPropertyChanged(nameof(HasVideo));
         OnPropertyChanged(nameof(IsPlaying));
     }
@@ -156,13 +145,11 @@ public sealed partial class PlayerViewModel : ObservableObject
     /// 첫 프레임이 이미 복원된 위치에서 보이고, 소리도 새지 않는다.
     /// </para>
     /// </summary>
-    /// <param name="inheritedOffsetMs">영상이 속한 폴더의 기본 오프셋. 영상별 값이 없을 때 쓴다. (FR-405)</param>
-    public async Task OpenAsync(VideoRecord record, int? inheritedOffsetMs = null)
+    public async Task OpenAsync(VideoRecord record)
     {
         var generation = ++_openGeneration;
 
         await SaveStateAsync();
-        InheritedOffsetMs = inheritedOffsetMs;
 
         ErrorMessage = null;
         IsLoading = true;
@@ -179,7 +166,7 @@ public sealed partial class PlayerViewModel : ObservableObject
 
             _engine.Speed = record.LastSpeed ?? SpeedRules.Default;
             ApplyAudio();
-            _engine.AudioDelayMs = FolderRules.EffectiveOffset(record.AvOffsetMs, inheritedOffsetMs);
+            _engine.AudioDelayMs = record.AvOffsetMs ?? 0;
 
             var duration = _engine.Duration;
             var resume = TimeSpan.FromMilliseconds(record.LastPositionMs);
@@ -451,16 +438,14 @@ public sealed partial class PlayerViewModel : ObservableObject
     [RelayCommand]
     public void ResetOffset() => ApplyOffset(0);
 
-    /// <summary>영상별 오프셋을 지우고 폴더 기본값을 따른다. (FR-405)</summary>
-    [RelayCommand]
-    public void FollowFolderOffset()
-    {
-        if (Current is not { } video || IsLoading) return;
-        _engine.AudioDelayMs = InheritedOffsetMs ?? 0;
-        OffsetMs = _engine.AudioDelayMs;
-        Current = video with { AvOffsetMs = null };
-        Persist(() => _library.SaveOffsetAsync(video.Id, null));
-    }
+    /// <summary>오프셋 프리셋. 메뉴는 PlayerView 가 이 목록으로 만든다. (D-9)</summary>
+    public OffsetPresetList OffsetPresets { get; }
+
+    /// <summary>프리셋 값을 이 영상의 오프셋으로 복사한다.</summary>
+    public void ApplyOffsetPreset(OffsetPreset preset) => ApplyOffset(preset.OffsetMs);
+
+    /// <summary>지금 오프셋을 새 프리셋으로. 이름은 설정 창에서 고친다. 꽉 찼으면 null.</summary>
+    public OffsetPreset? AddCurrentOffsetAsPreset() => OffsetPresets.Add(null, OffsetMs);
 
     private void ApplyOffset(int ms)
     {

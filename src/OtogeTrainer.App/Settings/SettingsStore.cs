@@ -16,6 +16,9 @@ public sealed class AppSettings
 
     /// <summary>볼륨 · 음소거. 영상마다가 아니라 앱 전체에 하나 — 스피커 · 헤드폰 환경에 딸린 값이다. (FR-206)</summary>
     public AudioSettings? Audio { get; set; }
+
+    /// <summary>오프셋 프리셋. 순서대로 메뉴에 나온다. (D-9)</summary>
+    public List<OffsetPresetSettings>? OffsetPresets { get; set; }
 }
 
 public sealed class AudioSettings
@@ -25,9 +28,9 @@ public sealed class AudioSettings
 }
 
 /// <summary>읽어 들인 설정. 파일에 없던 항목은 기본값으로 채워져 있다.</summary>
-public sealed record LoadedSettings(PlaybackKeyMap KeyMap, int Volume, bool Muted)
+public sealed record LoadedSettings(PlaybackKeyMap KeyMap, int Volume, bool Muted, OffsetPresetList OffsetPresets)
 {
-    public static LoadedSettings Defaults() => new(new PlaybackKeyMap(), VolumeRules.Default, false);
+    public static LoadedSettings Defaults() => new(new PlaybackKeyMap(), VolumeRules.Default, false, new OffsetPresetList());
 }
 
 /// <summary>설정 파일 읽기 · 쓰기.</summary>
@@ -58,7 +61,8 @@ public sealed class SettingsStore(string path)
             return new LoadedSettings(
                 PlaybackKeyMap.FromSerializable(settings?.PlaybackKeys),
                 VolumeRules.Clamp(audio.Volume),
-                audio.Muted);
+                audio.Muted,
+                OffsetPresetList.FromSerializable(settings?.OffsetPresets));
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -70,12 +74,13 @@ public sealed class SettingsStore(string path)
     /// <summary>
     /// 저장한다. 임시 파일에 다 쓴 뒤 바꿔치기하므로, 쓰는 도중 앱이 죽어도 기존 설정이 반쯤 덮이지 않는다.
     /// </summary>
-    public void Save(PlaybackKeyMap map, int volume, bool muted)
+    public void Save(PlaybackKeyMap map, int volume, bool muted, OffsetPresetList presets)
     {
         var settings = new AppSettings
         {
             PlaybackKeys = map.ToSerializable(),
             Audio = new AudioSettings { Volume = VolumeRules.Clamp(volume), Muted = muted },
+            OffsetPresets = presets.ToSerializable(),
         };
         var temp = Path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(settings, Json), Encoding.UTF8);
