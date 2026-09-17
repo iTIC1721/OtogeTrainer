@@ -14,6 +14,16 @@ public sealed class HasValueToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>0 이 아닌 숫자면 Visible.</summary>
+public sealed class NonZeroToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is int n && n != 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>false 면 Visible.</summary>
 public sealed class InverseBoolToVisibilityConverter : IValueConverter
 {

@@ -213,5 +213,16 @@ internal static class Migrations
 
             ALTER TABLE folders ADD COLUMN target_directory_id INTEGER REFERENCES directories (id) ON DELETE SET NULL;
             """),
+
+        new(5, "제외 목록 — 목록에서 제거한 파일을 스캔이 다시 올리지 않게 (FR-108)",
+            """
+            -- 지문으로 알아본다 (옮겨도 제외 유지). 경로 · 크기는 스캔이 지문 계산 없이 건너뛰게 하는 용도.
+            CREATE TABLE excluded_files (
+                fingerprint TEXT    PRIMARY KEY,
+                path        TEXT    NOT NULL,
+                file_size   INTEGER NOT NULL,
+                excluded_at TEXT    NOT NULL
+            );
+            """),
     ];
 }

@@ -25,13 +25,34 @@ public sealed partial class FoldersViewModel(IVideoLibrary library) : Observable
 
     public DirectoryTree Tree { get; private set; } = new([]);
 
+    /// <summary>목록에서 제거해 스캔이 건너뛰는 파일 수. (FR-108)</summary>
+    [ObservableProperty] private int _excludedCount;
+
+    /// <summary>창이 연결한다. 제외를 풀기 전에 묻는다.</summary>
+    public Func<int, bool>? ConfirmClearExclusions { get; set; }
+
     public async Task LoadAsync()
     {
         Tree = new DirectoryTree((await library.GetDirectoriesAsync()).Select(e => e.Directory));
         Folders.Clear();
         foreach (var folder in await library.GetFoldersAsync())
             Folders.Add(new FolderItem(folder, Tree));
+        ExcludedCount = await library.GetExcludedCountAsync();
         OnPropertyChanged(nameof(IsEmpty));
+    }
+
+    [RelayCommand]
+    private async Task ClearExclusions()
+    {
+        if (ConfirmClearExclusions is not null && !ConfirmClearExclusions(ExcludedCount)) return;
+        await ClearExclusionsAsync();
+    }
+
+    public async Task ClearExclusionsAsync()
+    {
+        var cleared = await library.ClearExclusionsAsync();
+        await LoadAsync();
+        Notice = $"목록에서 제거했던 영상 {cleared}개를 다시 포함합니다. 창을 닫으면 녹화 폴더를 다시 읽어 올립니다 (기록은 새로 시작).";
     }
 
     /// <summary>새 영상을 넣을 디렉토리 바꾸기. 이미 들어온 영상은 옮기지 않는다. (D-10)</summary>

@@ -2,6 +2,8 @@ namespace OtogeTrainer.Core.Library;
 
 public sealed record ScanProgress(string FolderPath, int Found, int Registered, int Skipped, int Failed);
 
+// Skipped 는 이미 아는 파일과 목록에서 제거한(제외 목록) 파일을 함께 센다
+
 /// <param name="FolderMissing">폴더가 없거나 접근할 수 없다 (외장 디스크를 뺀 경우 등).</param>
 public sealed record ScanResult(string FolderPath, int Found, int Registered, int Skipped, int Failed, bool FolderMissing);
 
@@ -57,9 +59,16 @@ public sealed class LibraryScanner(IVideoLibrary library, TimeProvider? clock = 
                 else
                 {
                     var (fingerprint, fileSize) = await FileFingerprint.ComputeAsync(path, ct);
-                    var target = (FolderRules.FindOwner(folders, path) ?? folder).TargetDirectoryId;
-                    await library.OpenOrRegisterAsync(path, fingerprint, fileSize, target, ct);
-                    registered++;
+                    if (await library.IsExcludedAsync(fingerprint, path, fileSize, ct))
+                    {
+                        skipped++;   // 사용자가 목록에서 제거한 영상. 옮겨진 경로여도 다시 올리지 않는다
+                    }
+                    else
+                    {
+                        var target = (FolderRules.FindOwner(folders, path) ?? folder).TargetDirectoryId;
+                        await library.OpenOrRegisterAsync(path, fingerprint, fileSize, target, ct);
+                        registered++;
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

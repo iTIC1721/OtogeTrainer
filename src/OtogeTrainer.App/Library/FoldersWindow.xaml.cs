@@ -28,6 +28,11 @@ public partial class FoldersWindow : Window
             return picker.ShowDialog() == true ? new DirectoryPick(picker.SelectedDirectoryId) : null;
         };
 
+        vm.ConfirmClearExclusions = count => MessageBox.Show(
+            this,
+            $"목록에서 제거했던 영상 {count}개를 다시 포함할까요?\n\n녹화 폴더 안에 있는 파일은 다음 스캔에서 다시 올라옵니다. 예전 북마크 · 오프셋 · 태그는 돌아오지 않습니다.",
+            "제외한 영상 다시 포함", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
+
         Loaded += async (_, _) => await vm.LoadAsync();
     }
 

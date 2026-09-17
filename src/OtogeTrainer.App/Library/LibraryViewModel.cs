@@ -352,6 +352,51 @@ public sealed partial class LibraryViewModel : ObservableObject
     public Task<bool> MoveVideoAsync(long videoId, long? directoryId)
         => RunRuleAsync(() => _library.MoveVideosAsync([videoId], directoryId));
 
+    // ── 목록에서 제거 (FR-108) ───────────────────────────────────────────────
+
+    [RelayCommand]
+    private async Task RemoveVideo(VideoCardItem item)
+    {
+        var ok = Confirm?.Invoke(
+            $"'{item.Title}' 을(를) 목록에서 제거할까요?\n\n" +
+            "실제 파일은 지우지 않습니다. 이 영상의 북마크 · 오프셋 · 태그 기록은 함께 지워집니다.\n" +
+            "녹화 폴더 안의 파일이어도 다시 올라오지 않습니다. 파일을 직접 열면 다시 목록에 들어옵니다.") ?? true;
+        if (ok) await RemoveVideosAsync([item.VideoId]);
+    }
+
+    /// <summary>디렉토리와 그 아래 모든 영상을 목록에서 제거한다. 디렉토리 자체는 남긴다.</summary>
+    [RelayCommand]
+    private async Task RemoveDirectoryVideos(DirectoryCardItem item)
+    {
+        var ids = await VideoIdsInAsync(item.Id);
+        if (ids.Count == 0)
+        {
+            Notify?.Invoke($"'{item.Name}' 안에는 영상이 없습니다.");
+            return;
+        }
+
+        var ok = Confirm?.Invoke(
+            $"'{item.Name}' 과(와) 그 아래 디렉토리에 있는 영상 {ids.Count}개를 모두 목록에서 제거할까요?\n\n" +
+            "디렉토리는 남습니다. 실제 파일은 지우지 않습니다. 영상들의 북마크 · 오프셋 · 태그 기록은 함께 지워집니다.\n" +
+            "녹화 폴더 안의 파일이어도 다시 올라오지 않습니다.") ?? true;
+        if (ok) await RemoveVideosAsync(ids);
+    }
+
+    /// <summary>디렉토리와 그 아래의 모든 영상 id.</summary>
+    public async Task<IReadOnlyList<long>> VideoIdsInAsync(long directoryId)
+        => (await _library.QueryAsync(new VideoQuery(Limit: int.MaxValue, Directory: new DirectoryFilter(directoryId, true))))
+            .Select(i => i.Video.Id).ToList();
+
+    public async Task<int> RemoveVideosAsync(IReadOnlyCollection<long> videoIds)
+    {
+        var removed = await _library.RemoveVideosAsync(videoIds);
+        await RefreshAsync();
+        Notify?.Invoke(
+            $"영상 {removed}개를 목록에서 제거했습니다 (파일은 그대로). " +
+            "되돌리려면 녹화 폴더 창의 [모두 다시 포함] — 기록은 새로 시작합니다.");
+        return removed;
+    }
+
     /// <summary>규칙 위반은 알림 배너로 보여 주고 false. 성공하면 목록을 다시 읽는다.</summary>
     private async Task<bool> RunRuleAsync(Func<Task> action)
     {

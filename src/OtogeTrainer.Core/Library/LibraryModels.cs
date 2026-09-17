@@ -81,7 +81,10 @@ public interface IVideoLibrary
     /// <summary>검색 · 태그 필터 · 정렬. 재생하지 않은 영상도 포함한다. (FR-106)</summary>
     Task<IReadOnlyList<LibraryItem>> QueryAsync(VideoQuery query, CancellationToken ct = default);
 
-    /// <summary>등록된 모든 영상의 경로 → 파일 크기. 스캔에서 이미 아는 파일을 건너뛰는 데 쓴다.</summary>
+    /// <summary>
+    /// 등록된 모든 영상 <b>과 목록에서 제거한 파일</b>의 경로 → 파일 크기.
+    /// 스캔에서 이미 아는 파일을 지문 계산 없이 건너뛰는 데 쓴다.
+    /// </summary>
     Task<IReadOnlyDictionary<string, long>> GetKnownFileSizesAsync(CancellationToken ct = default);
 
     Task MarkPlayedAsync(long videoId, DateTimeOffset at, CancellationToken ct = default);
@@ -99,8 +102,35 @@ public interface IVideoLibrary
 
     Task ClearBookmarkAsync(long videoId, int slot, CancellationToken ct = default);
 
-    /// <summary>목록에서만 제거한다. 파일은 건드리지 않는다. (FR-108)</summary>
+    /// <summary>
+    /// 기록을 그냥 지운다. 제외 목록에 넣지 않으므로 녹화 폴더 스캔이 다시 올릴 수 있다.
+    /// 사용자의 "목록에서 제거"는 <see cref="RemoveVideosAsync"/>.
+    /// </summary>
     Task RemoveAsync(long videoId, CancellationToken ct = default);
+
+    // ── 목록에서 제거 · 제외 목록 (FR-108) ──────────────────────────────────
+
+    /// <summary>
+    /// 영상을 목록에서 제거한다. 파일은 건드리지 않는다. 북마크 · 오프셋 · 태그 기록도 함께 지워진다.
+    /// <para>
+    /// 제거한 파일은 <b>제외 목록</b>에 남아 녹화 폴더 스캔이 다시 올리지 않는다.
+    /// 직접 열면(<see cref="OpenOrRegisterAsync"/>) 제외가 풀리고 다시 목록에 들어온다.
+    /// </para>
+    /// </summary>
+    /// <returns>제거한 영상 수.</returns>
+    Task<int> RemoveVideosAsync(IReadOnlyCollection<long> videoIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// 스캔 중 지문이 제외 목록에 있는가. 있으면 경로 · 크기를 갱신해, 다음 스캔부터는 지문 계산 없이 건너뛰게 한다
+    /// (제외한 파일을 다른 곳으로 옮긴 경우).
+    /// </summary>
+    Task<bool> IsExcludedAsync(string fingerprint, string path, long fileSize, CancellationToken ct = default);
+
+    Task<int> GetExcludedCountAsync(CancellationToken ct = default);
+
+    /// <summary>제외 목록을 비운다. 다음 스캔에서 녹화 폴더 안의 파일이 다시 올라온다 (기록은 새로 시작).</summary>
+    /// <returns>풀린 수.</returns>
+    Task<int> ClearExclusionsAsync(CancellationToken ct = default);
 
     // ── 녹화 폴더 (FR-104) ──────────────────────────────────────────────────
 

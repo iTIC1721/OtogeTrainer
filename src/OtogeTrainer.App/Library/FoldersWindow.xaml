@@ -12,6 +12,7 @@
     <Window.Resources>
         <app:HasValueToVisibilityConverter x:Key="HasValue" />
         <app:InverseBoolToVisibilityConverter x:Key="InverseBool" />
+        <app:NonZeroToVisibilityConverter x:Key="NonZero" />
     </Window.Resources>
 
     <DockPanel Margin="24,20,24,20">
@@ -30,6 +31,14 @@
                     Visibility="{Binding Notice, Converter={StaticResource HasValue}}">
                 <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" FontSize="12.5" />
             </Border>
+            <DockPanel Margin="0,12,0,0"
+                       Visibility="{Binding ExcludedCount, Converter={StaticResource NonZero}}">
+                <Button DockPanel.Dock="Right" Content="모두 다시 포함" Padding="10,3" MinHeight="26"
+                        Command="{Binding ClearExclusionsCommand}"
+                        ToolTip="목록에서 제거했던 영상을 다음 스캔에서 다시 올립니다" />
+                <TextBlock Style="{StaticResource Caption}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Text="{Binding ExcludedCount, StringFormat='목록에서 제거한 영상 {0}개는 스캔에서 건너뜁니다.'}" />
+            </DockPanel>
             <DockPanel Margin="0,18,0,0">
                 <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="닫기" MinWidth="88"
                         Click="OnClose" IsDefault="True" />

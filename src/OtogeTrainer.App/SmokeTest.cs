@@ -874,6 +874,52 @@ internal static class SmokeTest
             Check((await folderLib.GetAsync(clipCard.VideoId))?.DirectoryId == iidxId && File.Exists(clip),
                   "영상 기록 · 파일은 그대로");
 
+            // ── 9-4. 목록에서 제거 · 제외 목록 (FR-108) ─────────────────────
+            Emit("");
+            Emit("9-4. 목록에서 제거 · 제외 목록 (FR-108)");
+            shell.Notice = null;
+            var captureFile = Path.Combine(inbox, "new_capture.mp4");
+            await lib.RemoveVideosAsync([newCapture.Id]);
+            Check((await folderLib.QueryAsync(new Core.Library.VideoQuery("new_capture"))).Count == 0 && File.Exists(captureFile),
+                  "영상 하나 제거 → 목록에서 빠지고 파일은 그대로");
+            Check(shell.Notice?.Contains("제거했습니다") == true, "제거 안내 표시", shell.Notice?.Split('.')[0] ?? "");
+
+            await lib.ScanFoldersAsync();
+            Check((await folderLib.QueryAsync(new Core.Library.VideoQuery("new_capture"))).Count == 0,
+                  "녹화 폴더를 다시 읽어도 올라오지 않음");
+
+            var exclusionsVm = new Library.FoldersViewModel(folderLib);
+            await exclusionsVm.LoadAsync();
+            Check(exclusionsVm.ExcludedCount == 1, "녹화 폴더 창에 제외 수 표시", $"{exclusionsVm.ExcludedCount}");
+            var exclusionsWindow = new Library.FoldersWindow(exclusionsVm) { Owner = window };
+            exclusionsWindow.Show();
+            await Task.Delay(400);
+            Capture(exclusionsWindow, "m2-folders-excluded.png");
+            exclusionsWindow.Close();
+
+            await exclusionsVm.ClearExclusionsAsync();
+            await lib.ScanFoldersAsync();
+            var restored = await folderLib.QueryAsync(new Core.Library.VideoQuery("new_capture"));
+            Check(exclusionsVm.ExcludedCount == 0 && restored.Count == 1 && restored[0].Video.DirectoryId == iidxId,
+                  "모두 다시 포함 → 다음 스캔에서 다시 올라옴 (넣을 곳 규칙대로)", $"{restored.Count}");
+
+            lib.CurrentDirectoryId = null;
+            await WaitUntil(() => lib.Breadcrumbs.Count == 1);
+            var iidxCard = lib.Directories.First(d => d.Name == "beatmania IIDX");
+            var inIidx = await lib.VideoIdsInAsync(iidxCard.Id);
+            await lib.RemoveVideosAsync(inIidx);
+            iidxCard = lib.Directories.First(d => d.Name == "beatmania IIDX");
+            Check(inIidx.Count == 2 && iidxCard.VideoCount == 0 && await folderLib.GetExcludedCountAsync() == 2,
+                  "디렉토리 안 영상 모두 제거 → 디렉토리는 남음", $"{inIidx.Count}개 · {iidxCard.CountText}");
+
+            await shell.OpenPathAsync(clip);
+            await WaitUntil(() => player.HasVideo);
+            Check(player.HasVideo && player.Slots.All(slot => !slot.IsSet) && engine.AudioDelayMs == 0,
+                  "제거한 파일을 직접 열면 다시 들어옴 (기록은 새로)", $"오프셋 {engine.AudioDelayMs}");
+            await shell.BackToLibraryAsync();
+            Check(lib.Videos.Any(v => v.Path == clip) && await folderLib.GetExcludedCountAsync() == 1,
+                  "최상위에 다시 보이고 제외 목록에서 빠짐");
+
             // ── 10. 창 닫기 ─────────────────────────────────────────────────
             // 라이브러리 화면에서 닫으면 저장할 것이 없어 종료 저장이 동기로 끝난다. 그 경로에서
             // Closing 도중 Close() 를 다시 불러 예외가 났었다(수동 사용 중 발견).

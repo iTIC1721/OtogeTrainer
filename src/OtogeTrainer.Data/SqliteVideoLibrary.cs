@@ -26,6 +26,9 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
         await using var conn = await db.OpenAsync(ct);
         await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
 
+        // 직접 연 파일은 제외를 푼다 — 사용자가 다시 보겠다는 뜻 (FR-108)
+        await RunAsync(conn, tx, "DELETE FROM excluded_files WHERE fingerprint = $fp;", ct, ("$fp", fingerprint));
+
         var existing = await QuerySingleAsync(conn, tx, "WHERE fingerprint = $fp", ct, ("$fp", fingerprint));
 
         if (existing is null)
@@ -135,7 +138,7 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
     {
         await using var conn = await db.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT path, file_size FROM videos;";
+        cmd.CommandText = "SELECT path, file_size FROM videos UNION ALL SELECT path, file_size FROM excluded_files;";
 
         var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -201,6 +204,62 @@ public sealed class SqliteVideoLibrary(LibraryDatabase db, TimeProvider? clock =
 
     public Task RemoveAsync(long videoId, CancellationToken ct = default)
         => ExecuteAsync("DELETE FROM videos WHERE id = $id;", ct, ("$id", videoId));
+
+    // ── 목록에서 제거 · 제외 목록 (FR-108) ───────────────────────────────────
+
+    public async Task<int> RemoveVideosAsync(IReadOnlyCollection<long> videoIds, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+
+        var removed = 0;
+        foreach (var id in videoIds.Distinct())
+        {
+            await RunAsync(conn, tx,
+                "INSERT INTO excluded_files (fingerprint, path, file_size, excluded_at) " +
+                "SELECT fingerprint, path, file_size, $now FROM videos WHERE id = $id " +
+                "ON CONFLICT (fingerprint) DO UPDATE SET path = excluded.path, file_size = excluded.file_size, excluded_at = excluded.excluded_at;",
+                ct, ("$id", id), ("$now", Now()));
+
+            await using var del = conn.CreateCommand();
+            del.Transaction = tx;
+            del.CommandText = "DELETE FROM videos WHERE id = $id;";   // 북마크 · 태그 연결은 외래 키로 함께 지워진다
+            del.Parameters.AddWithValue("$id", id);
+            removed += await del.ExecuteNonQueryAsync(ct);
+        }
+
+        await RunAsync(conn, tx, "DELETE FROM tags WHERE NOT EXISTS (SELECT 1 FROM video_tags vt WHERE vt.tag_id = tags.id);", ct);
+        await tx.CommitAsync(ct);
+        return removed;
+    }
+
+    public async Task<bool> IsExcludedAsync(string fingerprint, string path, long fileSize, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "UPDATE excluded_files SET path = $path, file_size = $size WHERE fingerprint = $fp;";
+        cmd.Parameters.AddWithValue("$fp", fingerprint);
+        cmd.Parameters.AddWithValue("$path", path);
+        cmd.Parameters.AddWithValue("$size", fileSize);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    public async Task<int> GetExcludedCountAsync(CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM excluded_files;";
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    public async Task<int> ClearExclusionsAsync(CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM excluded_files;";
+        return await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     // ── 폴더 ─────────────────────────────────────────────────────────────────
 
