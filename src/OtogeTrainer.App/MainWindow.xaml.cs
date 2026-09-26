@@ -220,4 +220,6 @@ public partial class MainWindow : Window
     internal FloatingControlsWindow? FloatingControls => _floating;
 
     internal System.Windows.Controls.Slider VolumeSlider => PlayerView.VolumeSliderControl;
+
+    internal FrameworkElement ControlsPanel => PlayerView.Controls;
 }

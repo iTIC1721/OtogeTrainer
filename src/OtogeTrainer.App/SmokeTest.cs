@@ -597,6 +597,48 @@ internal static class SmokeTest
                   $"{savedAudio.Volume} · {savedAudio.Muted}");
             await SeekAndSettle(32.5);
 
+            // ── 5-7. 컨트롤 바 위치 고정 ────────────────────────────────────
+            // 배속을 바꾸면 점프 단위 글자 수가 달라진다(5s ↔ 2.5s). 그때 버튼이 밀리면
+            // 같은 자리를 연타해 배속을 조절할 수 없다 (사용 중 발견).
+            Emit("");
+            Emit("5-7. 컨트롤 바 위치 고정 (배속 · 재생 상태가 바뀌어도)");
+            var bar = window.ControlsPanel;
+            var buttons = Descendants<System.Windows.Controls.Button>(bar).ToList();
+
+            Point Spot(System.Windows.Controls.Button b)
+            {
+                bar.UpdateLayout();
+                return b.TransformToAncestor(bar).Transform(new Point(0, 0));
+            }
+
+            var speedUp = buttons.First(b => ReferenceEquals(b.Command, player.SpeedStepCommand) && (int)b.CommandParameter! > 0);
+            var muteButton = buttons.First(b => ReferenceEquals(b.Command, player.ToggleMuteCommand));
+            var presetButton = buttons.First(b => b.Name == "OffsetPresetButton");
+
+            player.SetSpeed(1.0);
+            var (speedSpot, muteSpot, presetSpot) = (Spot(speedUp), Spot(muteButton), Spot(presetButton));
+
+            foreach (var speed in new[] { 0.25, 2.0, 4.0, 0.5 })
+            {
+                player.SetSpeed(speed);
+                Check(Spot(speedUp) == speedSpot, $"배속 {speed:0.00}x — 배속 + 버튼 제자리",
+                      $"{Spot(speedUp).X:0} / {speedSpot.X:0}");
+            }
+
+            player.TogglePlay();
+            await WaitUntil(() => player.IsPlaying);
+            Check(Spot(muteButton) == muteSpot, "재생 중(버튼 글자가 길어져도) — 음소거 버튼 제자리",
+                  $"{Spot(muteButton).X:0} / {muteSpot.X:0}");
+            await Press(Key.Escape);
+            await WaitUntil(() => !player.IsPlaying);
+
+            player.AdjustOffset(-1000);
+            Check(Spot(presetButton) == presetSpot, "오프셋 −1000ms — 프리셋 버튼 제자리",
+                  $"{Spot(presetButton).X:0} / {presetSpot.X:0}");
+            player.ResetOffset();
+            player.SetSpeed(0.5);
+            player.AdjustOffset(33);
+
             // ── 6. 라이브러리 복귀 ──────────────────────────────────────────
             Emit("");
             Emit("6. 라이브러리 복귀 · 최근 목록 (FR-511 / FR-102)");
