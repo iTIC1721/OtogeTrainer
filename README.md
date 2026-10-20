@@ -4,7 +4,7 @@ PC 리듬게임(音ゲー, otoge) 플레이어를 위한 **플레이 영상 복�
 
 녹화해 둔 자신의 플레이 영상이나 참고 영상을 프레임 단위로 뜯어보고, 느린 배속으로 따라 치며 연습하는 데 맞춰 만들었습니다.
 
-> **개발 중** — 핵심 기능(M1)과 라이브러리 정리 기능(M2 일부)이 구현되어 있습니다. 아직 배포 빌드는 없습니다.
+> **개발 중** — 핵심 기능(M1)과 라이브러리 정리 기능(M2 일부)이 구현되어 있습니다. 배포 빌드는 [Releases](https://github.com/iTIC1721/OtogeTrainer/releases)에서 받을 수 있습니다.
 
 ## 일반 영상 플레이어와 다른 점
 
@@ -82,22 +82,29 @@ PC 리듬게임(音ゲー, otoge) 플레이어를 위한 **플레이 영상 복�
 | `Alt+←` | 라이브러리로 돌아가기 |
 | `Ctrl+O` | 영상 열기 (라이브러리 화면) |
 
-## 요구 사항
+## 설치
+
+[Releases](https://github.com/iTIC1721/OtogeTrainer/releases)에서 `OtogeTrainer-<버전>-win-x64.zip`을 받아 원하는 폴더에 풀고 `OtogeTrainer.exe`를 실행하세요. 설치 · 관리자 권한 · .NET 설치가 필요 없습니다.
 
 - Windows 10 (1809 이상) / Windows 11, x64
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **libmpv** (`libmpv-2.dll`, x64) — 저장소에 포함되어 있지 않습니다
+- 새 버전은 새 폴더에 풀어 써도 됩니다. 라이브러리 · 설정은 실행 파일과 따로 저장되어 그대로 이어집니다.
 
-## 빌드 · 실행
+## 소스에서 빌드
 
-1. libmpv를 준비해 `native/libmpv-2.dll`에 둡니다.
-   예: [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) 릴리스의 `mpv-dev-x86_64-*.7z`에서 `libmpv-2.dll`을 꺼냅니다.
+필요한 것: [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+
+1. libmpv를 받습니다. 120MB라 저장소에 넣지 않았고, 스크립트가 고정된 빌드를 받아 해시를 확인한 뒤 `native/libmpv-2.dll`에 둡니다.
+
+   ```bash
+   powershell -ExecutionPolicy Bypass -File tools/fetch-libmpv.ps1
+   ```
+
 2. 빌드하고 실행합니다.
 
-```bash
-dotnet build OtogeTrainer.sln
-dotnet run --project src/OtogeTrainer.App
-```
+   ```bash
+   dotnet build OtogeTrainer.sln
+   dotnet run --project src/OtogeTrainer.App
+   ```
 
 라이브러리 DB · 설정 · 썸네일은 `%APPDATA%\OtogeTrainer\`에 저장됩니다. 실행 인자 `--data <폴더>`로 위치를 바꿀 수 있습니다.
 
@@ -116,6 +123,16 @@ src/OtogeTrainer.App/bin/Debug/net8.0-windows/OtogeTrainer.exe --smoketest
 
 `spike/OtogeTrainer.M0`는 재생 엔진 · 입력 차단 방식을 검증한 초기 스파이크입니다. `--selftest` · `--inputtest` · `--windowtest`로 회귀 확인에 씁니다.
 
+## 배포
+
+배포 zip(self-contained 단일 실행 파일 + libmpv + 라이선스 고지)은 `tools/publish.ps1`로 만듭니다. 결과는 `artifacts/release/`에 생깁니다.
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version 0.1.0
+```
+
+`vX.Y.Z` 태그를 push하면 GitHub Actions(`.github/workflows/release.yml`)가 테스트를 돌린 뒤 같은 스크립트로 zip을 만들어 Release에 올립니다. 함께 배포하는 libmpv의 대응 소스(`tools/bundle-libmpv-source.ps1`)도 같이 올립니다. 하이픈이 든 태그(`v0.2.0-beta.1`)는 프리릴리스가 됩니다.
+
 ## 프로젝트 구조
 
 | 경로 | 내용 |
@@ -127,7 +144,7 @@ src/OtogeTrainer.App/bin/Debug/net8.0-windows/OtogeTrainer.exe --smoketest
 | `src/OtogeTrainer.Input` | 재생 중 입력 차단 · 재생 중 동작 키 배치 |
 | `tests/` | 단위 테스트 (xUnit) |
 | `spike/` | M0 기술 검증 스파이크 |
-| `tools/` | 개발용 스크립트 |
+| `tools/` | libmpv 받기 · 배포 zip · libmpv 소스 묶기 · 검증 클립 생성 스크립트 |
 
 ## 기술 스택
 
@@ -144,4 +161,4 @@ src/OtogeTrainer.App/bin/Debug/net8.0-windows/OtogeTrainer.exe --smoketest
 
 [GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
 
-재생 엔진으로 쓰는 libmpv 배포 빌드가 GPL 구성(x264 · x265 등 포함)이라, 앱도 GPL로 배포합니다.
+재생 엔진으로 쓰는 libmpv 배포 빌드가 GPL 구성(x264 · x265 등 포함)이라, 앱도 GPL로 배포합니다. 함께 배포하는 구성요소의 라이선스와 대응 소스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)를 보세요.
