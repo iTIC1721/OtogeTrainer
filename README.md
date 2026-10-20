@@ -6,6 +6,17 @@ PC 리듬게임(音ゲー, otoge) 플레이어를 위한 **플레이 영상 복�
 
 > **개발 중** — 핵심 기능(M1)과 라이브러리 정리 기능(M2 일부)이 구현되어 있습니다. 배포 빌드는 [Releases](https://github.com/iTIC1721/OtogeTrainer/releases)에서 받을 수 있습니다.
 
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/library.png" alt="라이브러리 화면"><br><sub>라이브러리</sub></td>
+    <td width="50%"><img src="assets/screenshots/djmax-respect-v.png" alt="DJMAX RESPECT V 플레이 영상 재생 화면"><br><sub>DJMAX RESPECT V</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/ez2on.png" alt="EZ2ON REBOOT : R 플레이 영상 재생 화면"><br><sub>EZ2ON REBOOT : R</sub></td>
+    <td width="50%"><img src="assets/screenshots/in-falsus.png" alt="In Falsus 플레이 영상 재생 화면"><br><sub>In Falsus</sub></td>
+  </tr>
+</table>
+
 ## 일반 영상 플레이어와 다른 점
 
 1. **프레임 단위 정밀 탐색이 기본 기능** — 프레임 스텝, 배속에 연동되는 점프, 영상별 북마크 5슬롯. 모든 탐색은 키프레임으로 튀지 않는 정확한 위치로 이동합니다.
