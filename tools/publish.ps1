@@ -53,7 +53,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -Path "$zip.sha256" -Value "$hash  $name.zip" -Encoding Ascii
+# sha256sum -c 형식으로, 줄 끝은 LF. CRLF 면 sha256sum 이 파일 이름 끝의 CR 때문에 파일을 찾지 못한다.
+[IO.File]::WriteAllText("$zip.sha256", "$hash  $name.zip`n", [Text.Encoding]::ASCII)
 
 $sizeMb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host "완료: $zip ($sizeMb MB)"
