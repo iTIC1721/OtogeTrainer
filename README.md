@@ -142,4 +142,6 @@ src/OtogeTrainer.App/bin/Debug/net8.0-windows/OtogeTrainer.exe --smoketest
 
 ## 라이선스
 
-아직 정하지 않았습니다. 배포 시점에 정할 예정이며, 사용하는 libmpv 빌드의 라이선스 구성(GPL / LGPL)에 따라 달라집니다.
+[GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
+
+재생 엔진으로 쓰는 libmpv 배포 빌드가 GPL 구성(x264 · x265 등 포함)이라, 앱도 GPL로 배포합니다.
