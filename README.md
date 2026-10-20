@@ -84,10 +84,14 @@ PC 리듬게임(音ゲー, otoge) 플레이어를 위한 **플레이 영상 복�
 
 ## 설치
 
-[Releases](https://github.com/iTIC1721/OtogeTrainer/releases)에서 `OtogeTrainer-<버전>-win-x64.zip`을 받아 원하는 폴더에 풀고 `OtogeTrainer.exe`를 실행하세요. 설치 · 관리자 권한 · .NET 설치가 필요 없습니다.
+[Releases](https://github.com/iTIC1721/OtogeTrainer/releases)에서 둘 중 하나를 받으세요. 관리자 권한 · .NET 설치가 필요 없습니다.
 
-- Windows 10 (1809 이상) / Windows 11, x64
-- 새 버전은 새 폴더에 풀어 써도 됩니다. 라이브러리 · 설정은 실행 파일과 따로 저장되어 그대로 이어집니다.
+- **설치 파일** `OtogeTrainer-<버전>-win-x64-setup.exe` — 실행하면 사용자 폴더(`%LOCALAPPDATA%\Programs\OtogeTrainer`)에 설치되고 시작 메뉴에 등록됩니다. 새 버전의 설치 파일을 실행하면 그대로 업데이트되고, 제거는 Windows 설정의 앱 목록에서 합니다.
+- **포터블 zip** `OtogeTrainer-<버전>-win-x64.zip` — 원하는 폴더에 풀고 `OtogeTrainer.exe`를 실행하세요.
+
+요구 사항: Windows 10 (1809 이상) / Windows 11, x64
+
+라이브러리 · 설정은 프로그램과 따로 `%APPDATA%\OtogeTrainer\`에 저장되므로, 업데이트하거나 제거해도 지워지지 않습니다.
 
 ## 소스에서 빌드
 
@@ -131,7 +135,13 @@ src/OtogeTrainer.App/bin/Debug/net8.0-windows/OtogeTrainer.exe --smoketest
 powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version 0.1.0
 ```
 
-`vX.Y.Z` 태그를 push하면 GitHub Actions(`.github/workflows/release.yml`)가 테스트를 돌린 뒤 같은 스크립트로 zip을 만들어 Release에 올립니다. 함께 배포하는 libmpv의 대응 소스(`tools/bundle-libmpv-source.ps1`)도 같이 올립니다. 하이픈이 든 태그(`v0.2.0-beta.1`)는 프리릴리스가 됩니다.
+설치 파일은 그 결과로 `tools/build-installer.ps1`이 만듭니다. [Inno Setup 6](https://jrsoftware.org/isinfo.php)이 필요합니다(`winget install JRSoftware.InnoSetup`).
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/build-installer.ps1 -Version 0.1.0
+```
+
+`vX.Y.Z` 태그를 push하면 GitHub Actions(`.github/workflows/release.yml`)가 테스트를 돌린 뒤 같은 스크립트로 zip과 설치 파일을 만들어 Release에 올립니다. 함께 배포하는 libmpv의 대응 소스(`tools/bundle-libmpv-source.ps1`)도 같이 올립니다. 하이픈이 든 태그(`v0.2.0-beta.1`)는 프리릴리스가 됩니다.
 
 ## 프로젝트 구조
 
@@ -144,7 +154,8 @@ powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version 0.1.0
 | `src/OtogeTrainer.Input` | 재생 중 입력 차단 · 재생 중 동작 키 배치 |
 | `tests/` | 단위 테스트 (xUnit) |
 | `spike/` | M0 기술 검증 스파이크 |
-| `tools/` | libmpv 받기 · 배포 zip · libmpv 소스 묶기 · 검증 클립 생성 스크립트 |
+| `installer/` | 설치 파일 스크립트 (Inno Setup) |
+| `tools/` | libmpv 받기 · 배포 zip · 설치 파일 · libmpv 소스 묶기 · 검증 클립 생성 스크립트 |
 
 ## 기술 스택
 
